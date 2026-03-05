@@ -10,7 +10,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Products from './pages/Products';
 import Cart from './pages/Cart';
-import Diagnose from './pages/Diagnose';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ProductDetail from './pages/ProductDetail';
@@ -54,7 +53,6 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/products" element={<Products />} />
           <Route path="/cart" element={<Cart />} />
-          <Route path="/diagnose" element={<Diagnose />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/product/:id" element={<ProductDetail />} />

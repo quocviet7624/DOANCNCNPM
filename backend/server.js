@@ -21,14 +21,12 @@ const bannerRoutes = require('./routes/bannerRoutes');
 const productRoutes = require('./routes/productRoutes');
 // --- ĐÃ SỬA DÒNG DƯỚI ĐÂY ---
 const categoryRoutes = require('./routes/categoryRoutes'); // Import Route, không phải Model
-const diagnoseRoutes = require('./routes/diagnoseRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const authRoutes = require('./routes/authRoutes');
 
 // ========== SỬ DỤNG ROUTES ==========
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes); // --- ĐÃ SỬA: Dùng biến categoryRoutes
-app.use('/api/diagnose', diagnoseRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/banners', bannerRoutes);
@@ -40,7 +38,6 @@ app.get('/', (req, res) => {
         endpoints: {
             products: '/api/products',
             categories: '/api/categories',
-            diagnose: '/api/diagnose',
             orders: '/api/orders',
             auth: '/api/auth'
         }

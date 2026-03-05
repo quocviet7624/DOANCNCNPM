@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Row, Col, Card, Radio, Button, Input, Form, 
-    Divider, List, Typography, Space, message, Tag, 
-    Modal, Popconfirm, Tooltip 
+import axios from 'axios';
+import {
+    Row, Col, Card, Radio, Button, Input, Form,
+    Divider, List, Typography, Space, message, Tag,
+    Modal, Popconfirm, Tooltip
 } from 'antd';
-import { 
-    EnvironmentOutlined, CreditCardOutlined, 
-    UserOutlined, PhoneOutlined, 
-    PlusOutlined, EditOutlined, DeleteOutlined 
-} from '@ant-design/icons'; // Đã xóa CheckCircleOutlined
+import {
+    EnvironmentOutlined, CreditCardOutlined,
+    UserOutlined, PhoneOutlined,
+    PlusOutlined, EditOutlined, DeleteOutlined
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
@@ -16,25 +17,17 @@ const { Title, Text } = Typography;
 const Checkout = () => {
     const navigate = useNavigate();
     const [cartItems, setCartItems] = useState([]);
-    
-    // State quản lý User và Địa chỉ
     const [userInfo, setUserInfo] = useState(null);
     const [savedAddresses, setSavedAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
-    
-    // State cho việc Thêm mới
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [addForm] = Form.useForm();
-
-    // State cho việc Sửa (Edit)
     const [isEditing, setIsEditing] = useState(false);
     const [editingAddress, setEditingAddress] = useState(null);
     const [editForm] = Form.useForm();
-
     const [paymentMethod, setPaymentMethod] = useState('cod');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // 1. Load dữ liệu
     useEffect(() => {
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         if (cart.length === 0) {
@@ -54,7 +47,6 @@ const Checkout = () => {
         setUserInfo(user);
 
         let addresses = user.addresses || [];
-        // Migration data cũ nếu chưa có mảng addresses
         if (addresses.length === 0 && user.address) {
             addresses = [{
                 id: Date.now(),
@@ -63,13 +55,12 @@ const Checkout = () => {
                 address: user.address,
                 isDefault: true
             }];
-            const updatedUser = { ...user, addresses: addresses };
+            const updatedUser = { ...user, addresses };
             localStorage.setItem('user', JSON.stringify(updatedUser));
         }
 
         setSavedAddresses(addresses);
         if (addresses.length > 0) {
-            // Ưu tiên chọn địa chỉ mặc định, nếu không thì chọn cái đầu
             const defaultAddr = addresses.find(a => a.isDefault);
             setSelectedAddressId(defaultAddr ? defaultAddr.id : addresses[0].id);
         } else {
@@ -81,7 +72,6 @@ const Checkout = () => {
         return cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     };
 
-    // --- LOGIC CẬP NHẬT LOCALSTORAGE ---
     const updateUserStorage = (newAddresses) => {
         const updatedUser = { ...userInfo, addresses: newAddresses };
         localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -89,7 +79,6 @@ const Checkout = () => {
         setSavedAddresses(newAddresses);
     };
 
-    // 2. Thêm địa chỉ mới
     const handleAddNewAddress = (values) => {
         const newAddress = {
             id: Date.now(),
@@ -99,7 +88,6 @@ const Checkout = () => {
             isDefault: savedAddresses.length === 0
         };
         const newAddressList = [...savedAddresses, newAddress];
-        
         updateUserStorage(newAddressList);
         setSelectedAddressId(newAddress.id);
         setIsAddingNew(false);
@@ -107,15 +95,11 @@ const Checkout = () => {
         message.success('Đã thêm địa chỉ mới!');
     };
 
-    // 3. Xóa địa chỉ
     const handleDeleteAddress = (e, id) => {
-        e.stopPropagation(); // Ngăn sự kiện click vào row
-        
+        e.stopPropagation();
         const newAddressList = savedAddresses.filter(addr => addr.id !== id);
         updateUserStorage(newAddressList);
         message.success('Đã xóa địa chỉ!');
-
-        // Nếu xóa địa chỉ đang chọn, phải chọn lại cái khác
         if (id === selectedAddressId) {
             if (newAddressList.length > 0) {
                 setSelectedAddressId(newAddressList[0].id);
@@ -126,33 +110,20 @@ const Checkout = () => {
         }
     };
 
-    // 4. Mở Modal Sửa
     const openEditModal = (e, address) => {
-        e.stopPropagation(); // Ngăn sự kiện chọn địa chỉ
+        e.stopPropagation();
         setEditingAddress(address);
-        editForm.setFieldsValue({
-            name: address.name,
-            phone: address.phone,
-            detail: address.address
-        });
+        editForm.setFieldsValue({ name: address.name, phone: address.phone, detail: address.address });
         setIsEditing(true);
     };
 
-    // 5. Lưu sau khi Sửa
     const handleUpdateAddress = () => {
         editForm.validateFields().then(values => {
-            const newAddressList = savedAddresses.map(addr => {
-                if (addr.id === editingAddress.id) {
-                    return {
-                        ...addr,
-                        name: values.name,
-                        phone: values.phone,
-                        address: values.detail
-                    };
-                }
-                return addr;
-            });
-
+            const newAddressList = savedAddresses.map(addr =>
+                addr.id === editingAddress.id
+                    ? { ...addr, name: values.name, phone: values.phone, address: values.detail }
+                    : addr
+            );
             updateUserStorage(newAddressList);
             setIsEditing(false);
             setEditingAddress(null);
@@ -160,8 +131,7 @@ const Checkout = () => {
         });
     };
 
-    // 6. Xử lý Đặt hàng
-    const handlePlaceOrder = () => {
+    const handlePlaceOrder = async () => {
         if (!selectedAddressId && !isAddingNew) {
             message.error('Vui lòng chọn địa chỉ giao hàng!');
             return;
@@ -169,44 +139,61 @@ const Checkout = () => {
 
         setIsProcessing(true);
         const selectedAddr = savedAddresses.find(a => a.id === selectedAddressId);
-        
-        setTimeout(() => {
-            const newOrder = {
-                id: Date.now(),
-                orderId: `DH${Date.now()}`,
+
+        const orderData = {
+            userId: userInfo._id || userInfo.id,
+            customerName: selectedAddr.name,
+            phone: selectedAddr.phone,
+            address: selectedAddr.address,
+            items: cartItems,
+            totalAmount: calculateTotal(),
+            paymentMethod: paymentMethod === 'paypal' ? 'PayPal' : 'COD',
+            status: 'Chờ xác nhận'
+        };
+
+        try {
+            const res = await axios.post('http://localhost:5000/api/orders/checkout', orderData);
+            const savedOrder = res.data.order;
+
+            // Lưu local để hiển thị lịch sử
+            const newOrderLocal = {
+                id: savedOrder._id,
+                orderId: savedOrder._id.slice(-8).toUpperCase(),
                 items: cartItems,
                 totalAmount: calculateTotal(),
                 orderDate: new Date().toLocaleString('vi-VN'),
                 status: 'pending',
-                paymentMethod: paymentMethod === 'paypal' ? 'PayPal' : 'COD',
-                isPaid: paymentMethod === 'paypal',
                 customerName: selectedAddr.name,
                 phone: selectedAddr.phone,
                 address: selectedAddr.address
             };
-
             const history = JSON.parse(localStorage.getItem('orderHistory') || '[]');
-            history.unshift(newOrder);
+            history.unshift(newOrderLocal);
             localStorage.setItem('orderHistory', JSON.stringify(history));
+
             localStorage.removeItem('cart');
             window.dispatchEvent(new Event('cartChange'));
-
+            window.dispatchEvent(new Event('orderChange')); // ← Báo Cart reload lịch sử
             message.success('Đặt hàng thành công!');
-            setIsProcessing(false);
             navigate('/my-orders');
-        }, 1500);
+
+        } catch (err) {
+            console.error(err);
+            message.error('Đặt hàng thất bại! Vui lòng thử lại.');
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     return (
         <div style={{ padding: '30px', background: '#f5f5f5', minHeight: '100vh' }}>
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
                 <Title level={2} style={{ textAlign: 'center', marginBottom: 30 }}>Thanh Toán</Title>
-                
+
                 <Row gutter={24}>
                     <Col xs={24} lg={14}>
-                        {/* DANH SÁCH ĐỊA CHỈ */}
-                        <Card 
-                            title={<span><EnvironmentOutlined /> Địa chỉ nhận hàng</span>} 
+                        <Card
+                            title={<span><EnvironmentOutlined /> Địa chỉ nhận hàng</span>}
                             style={{ marginBottom: 20 }}
                             extra={
                                 !isAddingNew && (
@@ -222,9 +209,9 @@ const Checkout = () => {
                                         <List
                                             dataSource={savedAddresses}
                                             renderItem={item => (
-                                                <div 
+                                                <div
                                                     onClick={() => setSelectedAddressId(item.id)}
-                                                    style={{ 
+                                                    style={{
                                                         cursor: 'pointer',
                                                         border: selectedAddressId === item.id ? '2px solid #1890ff' : '1px solid #e8e8e8',
                                                         padding: '15px',
@@ -232,11 +219,10 @@ const Checkout = () => {
                                                         borderRadius: '8px',
                                                         backgroundColor: selectedAddressId === item.id ? '#f0f9ff' : 'white',
                                                         transition: 'all 0.3s',
-                                                        position: 'relative' // Để định vị nút xóa sửa
+                                                        position: 'relative'
                                                     }}
                                                 >
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        {/* Phần thông tin bên trái */}
                                                         <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                                                             <Radio checked={selectedAddressId === item.id} />
                                                             <div style={{ marginLeft: 10 }}>
@@ -249,17 +235,14 @@ const Checkout = () => {
                                                                 <div style={{ marginTop: 4 }}>{item.address}</div>
                                                             </div>
                                                         </div>
-
-                                                        {/* Phần nút thao tác bên phải */}
                                                         <Space>
                                                             <Tooltip title="Sửa địa chỉ">
-                                                                <Button 
-                                                                    type="text" 
-                                                                    icon={<EditOutlined style={{ color: '#1890ff' }} />} 
+                                                                <Button
+                                                                    type="text"
+                                                                    icon={<EditOutlined style={{ color: '#1890ff' }} />}
                                                                     onClick={(e) => openEditModal(e, item)}
                                                                 />
                                                             </Tooltip>
-                                                            
                                                             <Popconfirm
                                                                 title="Bạn có chắc muốn xóa địa chỉ này?"
                                                                 onConfirm={(e) => handleDeleteAddress(e, item.id)}
@@ -267,11 +250,11 @@ const Checkout = () => {
                                                                 okText="Xóa"
                                                                 cancelText="Hủy"
                                                             >
-                                                                <Button 
-                                                                    type="text" 
-                                                                    danger 
-                                                                    icon={<DeleteOutlined />} 
-                                                                    onClick={(e) => e.stopPropagation()} // Chỉ mở popconfirm, ko chọn row
+                                                                <Button
+                                                                    type="text"
+                                                                    danger
+                                                                    icon={<DeleteOutlined />}
+                                                                    onClick={(e) => e.stopPropagation()}
                                                                 />
                                                             </Popconfirm>
                                                         </Space>
@@ -290,12 +273,11 @@ const Checkout = () => {
                                     )}
                                 </>
                             ) : (
-                                // FORM THÊM MỚI
                                 <div style={{ background: '#fafafa', padding: 20, borderRadius: 8, border: '1px dashed #d9d9d9' }}>
                                     <Title level={5}>Thêm địa chỉ giao hàng mới</Title>
-                                    <Form 
-                                        form={addForm} 
-                                        layout="vertical" 
+                                    <Form
+                                        form={addForm}
+                                        layout="vertical"
                                         onFinish={handleAddNewAddress}
                                         initialValues={{ name: userInfo?.fullName, phone: userInfo?.phone }}
                                     >
@@ -326,8 +308,8 @@ const Checkout = () => {
                         </Card>
 
                         <Card title={<span><CreditCardOutlined /> Phương thức thanh toán</span>}>
-                            <Radio.Group 
-                                onChange={e => setPaymentMethod(e.target.value)} 
+                            <Radio.Group
+                                onChange={e => setPaymentMethod(e.target.value)}
                                 value={paymentMethod}
                                 style={{ width: '100%' }}
                             >
@@ -382,14 +364,19 @@ const Checkout = () => {
                                     {calculateTotal().toLocaleString()} đ
                                 </Title>
                             </div>
-                            <Button 
-                                type="primary" 
-                                block 
-                                size="large" 
+                            <Button
+                                type="primary"
+                                block
+                                size="large"
                                 loading={isProcessing}
                                 onClick={handlePlaceOrder}
                                 disabled={isAddingNew || savedAddresses.length === 0}
-                                style={{ height: 50, background: paymentMethod === 'paypal' ? '#003087' : '#ff4d4f', borderColor: paymentMethod === 'paypal' ? '#003087' : '#ff4d4f', fontWeight: 'bold' }}
+                                style={{
+                                    height: 50,
+                                    background: paymentMethod === 'paypal' ? '#003087' : '#ff4d4f',
+                                    borderColor: paymentMethod === 'paypal' ? '#003087' : '#ff4d4f',
+                                    fontWeight: 'bold'
+                                }}
                             >
                                 {paymentMethod === 'paypal' ? 'Pay with PayPal' : 'ĐẶT HÀNG NGAY'}
                             </Button>
@@ -398,7 +385,6 @@ const Checkout = () => {
                 </Row>
             </div>
 
-            {/* MODAL SỬA ĐỊA CHỈ */}
             <Modal
                 title="Cập nhật địa chỉ"
                 open={isEditing}

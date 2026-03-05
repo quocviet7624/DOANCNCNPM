@@ -140,10 +140,6 @@ const AppNavbar = () => {
       key: '/products',
       label: <Link to="/products">SẢN PHẨM</Link>
     },
-    {
-      key: '/diagnose',
-      label: <Link to="/diagnose">BÁC SĨ THỦY SINH</Link>
-    }
   ];
 
   // Xác định menu item được chọn dựa vào pathname
