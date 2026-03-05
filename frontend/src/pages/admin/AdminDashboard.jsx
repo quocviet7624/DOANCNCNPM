@@ -4,13 +4,15 @@ import {
   ShoppingOutlined,
   UserOutlined,
   FileTextOutlined,
-  DollarOutlined
+  DollarOutlined,
+  AppstoreOutlined // <--- Mới thêm icon
 } from '@ant-design/icons';
 import axios from 'axios';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
     totalProducts: 0,
+    totalCategories: 0, // <--- Mới thêm state
     totalUsers: 0,
     totalOrders: 0,
     totalRevenue: 0
@@ -29,6 +31,9 @@ const AdminDashboard = () => {
       // Fetch products
       const productsRes = await axios.get('http://localhost:5000/api/products');
       
+      // Fetch categories (MỚI)
+      const categoriesRes = await axios.get('http://localhost:5000/api/categories');
+
       // Fetch users
       const usersRes = await axios.get('http://localhost:5000/api/auth/users', {
         headers: { Authorization: `Bearer ${token}` }
@@ -49,15 +54,10 @@ const AdminDashboard = () => {
 
       setStats({
         totalProducts: productsRes.data.length,
+        totalCategories: categoriesRes.data.length, // <--- Cập nhật dữ liệu
         totalUsers: usersRes.data.length,
         totalOrders: ordersCount,
         totalRevenue: revenue
-      });
-
-      console.log('✅ Đã tải thống kê:', {
-        products: productsRes.data.length,
-        users: usersRes.data.length,
-        orders: ordersCount
       });
 
     } catch (err) {
@@ -74,18 +74,32 @@ const AdminDashboard = () => {
       </h2>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}>
+        {/* Card Sản phẩm */}
+        <Col xs={24} sm={12} lg={4}> {/* Chỉnh lại kích thước cột */}
           <Card loading={loading}>
             <Statistic
-              title="Tổng sản phẩm"
+              title="Sản phẩm"
               value={stats.totalProducts}
               prefix={<ShoppingOutlined />}
               valueStyle={{ color: '#3f8600' }}
             />
           </Card>
         </Col>
+
+        {/* Card Danh mục (MỚI) */}
+        <Col xs={24} sm={12} lg={5}>
+          <Card loading={loading}>
+            <Statistic
+              title="Danh mục"
+              value={stats.totalCategories}
+              prefix={<AppstoreOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
         
-        <Col xs={24} sm={12} lg={6}>
+        {/* Card Người dùng */}
+        <Col xs={24} sm={12} lg={5}>
           <Card loading={loading}>
             <Statistic
               title="Người dùng"
@@ -96,7 +110,8 @@ const AdminDashboard = () => {
           </Card>
         </Col>
         
-        <Col xs={24} sm={12} lg={6}>
+        {/* Card Đơn hàng */}
+        <Col xs={24} sm={12} lg={5}>
           <Card loading={loading}>
             <Statistic
               title="Đơn hàng"
@@ -107,7 +122,8 @@ const AdminDashboard = () => {
           </Card>
         </Col>
         
-        <Col xs={24} sm={12} lg={6}>
+        {/* Card Doanh thu */}
+        <Col xs={24} sm={12} lg={5}>
           <Card loading={loading}>
             <Statistic
               title="Doanh thu"
@@ -126,20 +142,11 @@ const AdminDashboard = () => {
           Đây là hệ thống quản lý cửa hàng thủy sinh. Sử dụng menu bên trái để:
         </p>
         <ul style={{ fontSize: 15, lineHeight: 2 }}>
-          <li>📦 <strong>Quản lý sản phẩm:</strong> Thêm, sửa, xóa thuốc, cá, cây thủy sinh</li>
+          <li>📦 <strong>Quản lý sản phẩm & Danh mục:</strong> Thêm, sửa, xóa sản phẩm và phân loại</li>
           <li>👥 <strong>Quản lý người dùng:</strong> Xem và quản lý tài khoản khách hàng</li>
           <li>📋 <strong>Quản lý đơn hàng:</strong> Theo dõi và xử lý đơn đặt hàng</li>
-          <li>🎬 <strong>Quản lý Banner/Video:</strong> Cập nhật nội dung trang chủ</li>
+          <li>🎬 <strong>Quản lý Banner:</strong> Cập nhật nội dung trang chủ</li>
         </ul>
-        <div style={{ 
-          marginTop: 20, 
-          padding: 16, 
-          background: '#f0f5ff', 
-          borderRadius: 8,
-          borderLeft: '4px solid #1890ff'
-        }}>
-          <strong>💡 Mẹo:</strong> Nhấn F5 để refresh dữ liệu mới nhất!
-        </div>
       </Card>
     </div>
   );

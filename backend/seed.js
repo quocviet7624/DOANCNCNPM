@@ -1,165 +1,162 @@
 const mongoose = require('mongoose');
 const Product = require('./models/Product');
 const Disease = require('./models/Disease');
-const User = require('./models/User');
 require('dotenv').config();
 
+// Kết nối database
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ Đã kết nối MongoDB để seed data'))
+    .then(() => console.log('✅ Đã kết nối MongoDB'))
     .catch(err => console.error('❌ Lỗi kết nối:', err));
 
-const seedData = async () => {
+const seedDiseasesOnly = async () => {
     try {
-        console.log('🧹 Đang xóa dữ liệu cũ...');
-        await Product.deleteMany({});
-        await Disease.deleteMany({});
-        await User.deleteMany({});
+        console.log('🚀 Bắt đầu cập nhật dữ liệu Bệnh cá...');
 
-        console.log('🌱 Đang tạo sản phẩm mẫu...');
-        const products = await Product.insertMany([
-            // THUỐC
-            { 
-                name: "Bio-Knock 2", 
-                price: 30000, 
-                category: "Thuốc", 
-                description: "Trị nấm trắng, ký sinh trùng trên cá", 
-                image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300",
-                stock: 50
-            },
-            { 
-                name: "Xanh Methylen", 
-                price: 15000, 
-                category: "Thuốc", 
-                description: "Sát khuẩn vết thương, phòng bệnh", 
-                image: "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=300",
-                stock: 100
-            },
-            { 
-                name: "Sera Omnipur", 
-                price: 85000, 
-                category: "Thuốc", 
-                description: "Điều trị đa dạng bệnh cá", 
-                image: "https://images.unsplash.com/photo-1576671081837-49000212a370?w=300",
-                stock: 30
-            },
+        // 1. LẤY ID CÁC SẢN PHẨM THUỐC ĐANG CÓ TRONG DB
+        // (Chúng ta cần ID để nhúng vào field recommendProducts của Disease)
+        const products = await Product.find({
+            category: { $in: ["Thuốc & Vi Sinh", "Phụ Kiện & Cây"] } // Lấy thuốc và sưởi
+        });
 
-            // CÁ CẢNH
-            { 
-                name: "Cá Neon", 
-                price: 10000, 
-                category: "Cá", 
-                description: "Cá bơi theo đàn, màu xanh đỏ rực rỡ", 
-                image: "https://images.unsplash.com/photo-1522069169874-c58ec4b76be5?w=300",
-                stock: 200
-            },
-            { 
-                name: "Cá Betta", 
-                price: 50000, 
-                category: "Cá", 
-                description: "Cá xiêm, vây dài đẹp mắt", 
-                image: "https://images.unsplash.com/photo-1520990644579-08ae84c85a92?w=300",
-                stock: 80
-            },
-            { 
-                name: "Cá Guppy", 
-                price: 8000, 
-                category: "Cá", 
-                description: "Cá bảy màu sinh sản nhanh", 
-                image: "https://images.unsplash.com/photo-1535591273668-578e31182c4f?w=300",
-                stock: 150
-            },
+        // Hàm helper để tìm ID thuốc theo tên
+        const getProdId = (namePart) => {
+            const product = products.find(p => p.name.includes(namePart));
+            return product ? product._id : null;
+        };
 
-            // CÂY THỦY SINH
-            { 
-                name: "Cây Trân Châu Mini", 
-                price: 20000, 
-                category: "Cây", 
-                description: "Cây thảm dễ trồng cho người mới", 
-                image: "https://images.unsplash.com/photo-1497250681960-ef046c08a56e?w=300",
-                stock: 60
-            },
-            { 
-                name: "Cây Lá Xanh", 
-                price: 15000, 
-                category: "Cây", 
-                description: "Cây thủy sinh cơ bản, dễ chăm", 
-                image: "https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=300",
-                stock: 100
-            },
-
-            // PHỤ KIỆN
-            { 
-                name: "Máy sủi oxy mini", 
-                price: 120000, 
-                category: "Phụ kiện", 
-                description: "Cung cấp oxy cho bể cá", 
-                image: "https://images.unsplash.com/photo-1524678606370-a47ad25cb82a?w=300",
-                stock: 40
-            },
-            { 
-                name: "Đèn LED thủy sinh", 
-                price: 250000, 
-                category: "Phụ kiện", 
-                description: "Đèn chiếu sáng cho cây và cá", 
-                image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300",
-                stock: 25
-            },
-        ]);
-
-        console.log(`✅ Đã tạo ${products.length} sản phẩm!`);
-
-        console.log('🩺 Đang tạo bệnh và gợi ý thuốc...');
-        await Disease.insertMany([
+        // 2. DANH SÁCH BỆNH CHI TIẾT
+        const diseasesData = [
             {
-                name: "Bệnh Nấm Trắng (White Spot)",
-                symptoms: ["Đốm trắng", "Cọ mình vào đá", "Bơi lờ đờ"],
-                treatment: "Tăng nhiệt độ nước lên 28-30°C, dùng Bio-Knock 2 hoặc Xanh Methylen",
-                recommendProducts: [products[0]._id, products[1]._id],
+                name: "Nấm Trắng (White Spot)",
+                symptoms: [
+                    "Cá xuất hiện các đốm trắng nhỏ li ti khắp mình và vây như hạt muối.",
+                    "Cá bơi giật cục, hay cọ mình vào đá, lũa.",
+                    "Vây khép lại, cá lờ đờ."
+                ],
+                treatment: "Tăng nhiệt độ nước lên 29-30 độ C. Dùng thuốc đặc trị nấm hoặc muối hột.",
+                recommendProducts: [
+                    getProdId("Bio-Knock 2"), 
+                    getProdId("Xanh Methylen"), 
+                    getProdId("Sưởi Bể Cá")
+                ].filter(id => id),
                 severity: "Trung bình"
             },
             {
-                name: "Bệnh Vây Rách",
-                symptoms: ["Vây bị rách", "Viền đỏ ở vây", "Bơi lờ đờ"],
-                treatment: "Cách ly cá bệnh, dùng Xanh Methylen hoặc Sera Omnipur",
-                recommendProducts: [products[1]._id, products[2]._id],
-                severity: "Nhẹ"
+                name: "Thối Vây / Thối Đuôi (Fin Rot)",
+                symptoms: [
+                    "Vây hoặc đuôi bị tưa, rách, ngắn dần.",
+                    "Viền vây có màu trắng đục hoặc đỏ máu.",
+                    "Cá bơi lờ đờ, kém ăn."
+                ],
+                treatment: "Thay 30% nước sạch. Sử dụng kháng sinh hoặc thuốc dưỡng vây.",
+                recommendProducts: [
+                    getProdId("Tetra Nhật"), 
+                    getProdId("Bio-Knock 3"), 
+                    getProdId("API Melafix")
+                ].filter(id => id),
+                severity: "Cao"
             },
             {
-                name: "Bệnh Thối Vây",
-                symptoms: ["Vây bị rách", "Viền đen ở vây", "Bỏ ăn"],
-                treatment: "Thay nước thường xuyên, dùng thuốc kháng sinh chuyên dụng",
-                recommendProducts: [products[2]._id],
-                severity: "Nghiêm trọng"
+                name: "Sình Bụng / Phân Trắng",
+                symptoms: [
+                    "Bụng cá trương phình to bất thường.",
+                    "Đi phân thành sợi dài màu trắng dính ở hậu môn.",
+                    "Cá bỏ ăn, núp góc, nhát người."
+                ],
+                treatment: "Ngừng cho ăn ngay lập tức. Ngâm thuốc Metronidazole và sục khí mạnh.",
+                recommendProducts: [
+                    getProdId("Thuốc Trị Sình Bụng"), 
+                    getProdId("Muối Hột")
+                ].filter(id => id),
+                severity: "Nguy hiểm"
+            },
+            {
+                name: "Nấm Thủy Mi (Nấm Bông)",
+                symptoms: [
+                    "Xuất hiện các mảng trắng như bông gòn bám trên thân hoặc vết thương hở.",
+                    "Thường gặp khi nước bẩn hoặc cá bị sây sát."
+                ],
+                treatment: "Vệ sinh bể, dùng thuốc trị nấm mốc chuyên dụng.",
+                recommendProducts: [
+                    getProdId("API Pimafix"), 
+                    getProdId("Bio-Knock 2")
+                ].filter(id => id),
+                severity: "Trung bình"
+            },
+            {
+                name: "Ký Sinh Trùng Mỏ Neo / Rận Cá",
+                symptoms: [
+                    "Thấy rõ ký sinh trùng bám trên thân cá (giống cái mỏ neo hoặc con rận tròn).",
+                    "Vết bám bị sưng đỏ, chảy máu.",
+                    "Cá gầy rộc nhanh chóng."
+                ],
+                treatment: "Dùng nhíp gắp ký sinh trùng ra (nếu được) và đánh thuốc diệt ký sinh.",
+                recommendProducts: [
+                    getProdId("Bio-Knock 4")
+                ].filter(id => id),
+                severity: "Cao"
+            },
+            {
+                name: "Đục Mắt (Cloudy Eye)",
+                symptoms: [
+                    "Mắt cá bị phủ một lớp màng đục trắng hoặc xám.",
+                    "Mắt sưng lồi ra (pop-eye) trong giai đoạn nặng.",
+                    "Cá khó định hướng khi bơi."
+                ],
+                treatment: "Kiểm tra chất lượng nước (NH3/NO3). Thay nước đều và dùng Melafix.",
+                recommendProducts: [
+                    getProdId("API Melafix"), 
+                    getProdId("Tetra Nhật")
+                ].filter(id => id),
+                severity: "Trung bình"
+            },
+            {
+                name: "Sốc Nước / Stress",
+                symptoms: [
+                    "Cá bơi loạn xạ hoặc nằm im đáy bể sau khi thay nước hoặc mới mua về.",
+                    "Cá thở gấp, mang đập mạnh.",
+                    "Màu sắc nhợt nhạt."
+                ],
+                treatment: "Tắt đèn, sục oxy nhẹ. Bổ sung Vitamin và khoáng chất giảm stress.",
+                recommendProducts: [
+                    getProdId("Vitamin C"), 
+                    getProdId("Seachem Prime"),
+                    getProdId("Xanh Methylen")
+                ].filter(id => id),
+                severity: "Thấp"
+            },
+             {
+                name: "Lở Loét Thân Mình",
+                symptoms: [
+                    "Trên thân cá xuất hiện các vết loét đỏ, ăn sâu vào thịt.",
+                    "Vảy bị bong tróc.",
+                    "Thường do nhiễm khuẩn nặng."
+                ],
+                treatment: "Cách ly cá bệnh. Sử dụng thuốc kháng khuẩn phổ rộng.",
+                recommendProducts: [
+                    getProdId("Sera Omnipur"), 
+                    getProdId("Bio-Knock 3"),
+                    getProdId("Tetra Nhật")
+                ].filter(id => id),
+                severity: "Nguy hiểm"
             }
-        ]);
+        ];
 
-        console.log('✅ Đã tạo bệnh và liên kết thuốc!');
+        // 3. THỰC HIỆN CẬP NHẬT DATABASE
+        // Chỉ xóa bảng Disease cũ, giữ nguyên Product/Category/User
+        await Disease.deleteMany({});
+        console.log('🧹 Đã xóa danh sách bệnh cũ.');
 
-        console.log('👤 Đang tạo tài khoản Admin mặc định...');
+        const insertedDiseases = await Disease.insertMany(diseasesData);
+        console.log(`✅ Đã thêm mới ${insertedDiseases.length} loại bệnh vào cơ sở dữ liệu.`);
         
-        // QUAN TRỌNG: Không hash ở đây vì User model đã có pre-save hook
-        const adminUser = new User({
-            username: 'admin',
-            password: 'admin123',  // Password thô, sẽ tự động hash bởi pre-save hook
-            role: 'admin',
-            email: 'admin@fcjunior.com',
-            fullName: 'Administrator',
-            isActive: true
-        });
-
-        await adminUser.save();
-
-        console.log('✅ Tạo tài khoản Admin thành công!');
-        console.log('📌 Username: admin');
-        console.log('📌 Password: admin123');
-        console.log('');
-        console.log('🎉 HOÀN TẤT! Dữ liệu đã được bơm vào database.');
-        
+        console.log('🎉 Cập nhật thành công! (Dữ liệu Sản phẩm và Admin không bị ảnh hưởng)');
         process.exit(0);
+
     } catch (err) {
-        console.error('❌ Lỗi seed data:', err);
+        console.error('❌ Lỗi:', err);
         process.exit(1);
     }
 };
 
-seedData();
+seedDiseasesOnly();

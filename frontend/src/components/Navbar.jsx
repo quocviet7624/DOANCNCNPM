@@ -23,28 +23,37 @@ const AppNavbar = () => {
   const location = useLocation();
 
   useEffect(() => {
+    // 1. Load dữ liệu ban đầu
     updateCartCount();
     loadUserInfo();
     
-    // Lắng nghe sự kiện thay đổi localStorage
+    // 2. Xử lý sự kiện
     const handleStorageChange = () => {
       updateCartCount();
       loadUserInfo();
     };
 
+    // A. Lắng nghe thay đổi từ TAB KHÁC (cơ chế mặc định của browser)
     window.addEventListener('storage', handleStorageChange);
     
-    // Custom event cho việc login/logout trong cùng tab
+    // B. Lắng nghe thay đổi từ TAB HIỆN TẠI (do mình tự bắn sự kiện từ Home.jsx/Cart.jsx)
+    // --- DÒNG QUAN TRỌNG VỪA THÊM ---
+    window.addEventListener('cartChange', updateCartCount);
+    
+    // C. Lắng nghe đăng nhập/đăng xuất
     window.addEventListener('userChanged', loadUserInfo);
 
+    // 3. Cleanup khi component unmount
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('cartChange', updateCartCount); // Nhớ remove listener này
       window.removeEventListener('userChanged', loadUserInfo);
     };
   }, []);
 
   const updateCartCount = () => {
     const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+    // Tính tổng số lượng (quantity) của tất cả sản phẩm
     const total = cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
     setCartCount(total);
   };
@@ -71,7 +80,7 @@ const AppNavbar = () => {
     setUser(null);
     message.success('Đã đăng xuất thành công!');
     
-    // Dispatch custom event
+    // Dispatch custom event để báo cho các component khác nếu cần
     window.dispatchEvent(new Event('userChanged'));
     
     navigate('/');
@@ -83,13 +92,13 @@ const AppNavbar = () => {
     }
   };
 
-  // Menu items cho dropdown user
+// Menu items cho dropdown user
   const userMenuItems = [
     {
       key: 'profile',
       icon: <UserOutlined />,
       label: 'Thông tin cá nhân',
-      onClick: () => message.info('Tính năng đang phát triển!')
+      onClick: () => navigate('/profile') // ✅ Đã sửa link
     },
     ...(user?.role === 'admin' ? [{
       key: 'admin',
@@ -101,13 +110,13 @@ const AppNavbar = () => {
       key: 'orders',
       icon: <ShoppingOutlined />,
       label: 'Đơn hàng của tôi',
-      onClick: () => message.info('Tính năng đang phát triển!')
+      onClick: () => navigate('/my-orders') // ✅ Đã sửa link
     },
     {
       key: 'settings',
       icon: <SettingOutlined />,
       label: 'Cài đặt tài khoản',
-      onClick: () => message.info('Tính năng đang phát triển!')
+      onClick: () => navigate('/settings') // ✅ Đã sửa link
     },
     {
       type: 'divider'
@@ -147,7 +156,11 @@ const AppNavbar = () => {
       background: '#fff', 
       borderBottom: '2px solid #fadb14',
       padding: '0 50px',
-      height: '64px'
+      height: '64px',
+      position: 'sticky', // Giúp navbar dính lên trên cùng khi scroll
+      top: 0,
+      zIndex: 1000,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
     }}>
       {/* Logo */}
       <div 

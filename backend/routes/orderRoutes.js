@@ -1,11 +1,14 @@
 const router = require('express').Router();
 const Order = require('../models/Order');
 
-// POST - Tạo đơn hàng mới (Checkout)
+// POST - Tạo đơn hàng mới
 router.post('/checkout', async (req, res) => {
     try {
         const newOrder = new Order(req.body);
         const savedOrder = await newOrder.save();
+        
+        // TODO: Ở đây nên thêm logic trừ tồn kho (stock) của sản phẩm
+        
         res.status(200).json({ 
             message: "Đặt hàng thành công!", 
             order: savedOrder 
@@ -22,6 +25,17 @@ router.get('/', async (req, res) => {
         res.json(orders);
     } catch (err) {
         res.status(500).json({ message: 'Lỗi lấy đơn hàng', error: err.message });
+    }
+});
+
+// GET - Lấy lịch sử đơn hàng của User (MỚI THÊM - QUAN TRỌNG)
+// Route này giúp Frontend kiểm tra user đã mua hàng chưa để cho phép đánh giá
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const orders = await Order.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+        res.json(orders);
+    } catch (err) {
+        res.status(500).json({ message: 'Lỗi lấy lịch sử đơn hàng', error: err.message });
     }
 });
 
@@ -46,9 +60,7 @@ router.put('/:id', async (req, res) => {
             { status: req.body.status },
             { new: true }
         );
-        if (!updated) {
-            return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
-        }
+        if (!updated) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
         res.json(updated);
     } catch (err) {
         res.status(500).json({ message: 'Lỗi cập nhật', error: err.message });
@@ -58,10 +70,7 @@ router.put('/:id', async (req, res) => {
 // DELETE - Xóa đơn hàng (Admin)
 router.delete('/:id', async (req, res) => {
     try {
-        const deleted = await Order.findByIdAndDelete(req.params.id);
-        if (!deleted) {
-            return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
-        }
+        await Order.findByIdAndDelete(req.params.id);
         res.json({ message: 'Đã xóa đơn hàng' });
     } catch (err) {
         res.status(500).json({ message: 'Lỗi xóa đơn hàng', error: err.message });

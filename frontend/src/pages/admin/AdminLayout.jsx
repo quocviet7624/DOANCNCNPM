@@ -6,7 +6,8 @@ import {
     FileTextOutlined, 
     DashboardOutlined, 
     LogoutOutlined,
-    VideoCameraOutlined
+    VideoCameraOutlined,
+    AppstoreOutlined // <--- 1. Import icon cho danh mục
 } from '@ant-design/icons';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 
@@ -17,7 +18,7 @@ const AdminLayout = () => {
     const location = useLocation();
     
     useEffect(() => {
-        // Kiểm tra đăng nhập khi component mount
+        // Kiểm tra đăng nhập
         const token = localStorage.getItem('token');
         const userStr = localStorage.getItem('user');
         
@@ -44,10 +45,9 @@ const AdminLayout = () => {
         localStorage.clear();
         message.success('Đã đăng xuất!');
         navigate('/login');
-        window.location.reload(); // Force reload để clear state
+        window.location.reload();
     };
 
-    // Lấy user info để hiển thị
     const getUserInfo = () => {
         try {
             const userStr = localStorage.getItem('user');
@@ -59,12 +59,13 @@ const AdminLayout = () => {
 
     const user = getUserInfo();
 
-    // Xác định menu item được chọn dựa trên URL
+    // Xác định menu đang chọn để sáng đèn
     const getSelectedKey = () => {
         const path = location.pathname;
         if (path === '/admin' || path === '/admin/') return '1';
         if (path.includes('/admin/banners')) return '5';
         if (path.includes('/admin/products')) return '2';
+        if (path.includes('/admin/categories')) return '6'; // <--- 2. Thêm logic sáng đèn cho Danh mục
         if (path.includes('/admin/orders')) return '3';
         if (path.includes('/admin/users')) return '4';
         return '1';
@@ -98,15 +99,25 @@ const AdminLayout = () => {
                     <Menu.Item key="1" icon={<DashboardOutlined />}>
                         <Link to="/admin">Tổng quan</Link>
                     </Menu.Item>
+                    
                     <Menu.Item key="5" icon={<VideoCameraOutlined />}>
                         <Link to="/admin/banners">Banner/Video</Link>
                     </Menu.Item>
+                    
                     <Menu.Item key="2" icon={<ShoppingOutlined />}>
                         <Link to="/admin/products">Sản phẩm</Link>
                     </Menu.Item>
+
+                    {/* --- 3. PHẦN BẠN ĐANG THIẾU NÈ --- */}
+                    <Menu.Item key="6" icon={<AppstoreOutlined />}>
+                        <Link to="/admin/categories">Danh mục</Link>
+                    </Menu.Item>
+                    {/* --------------------------------- */}
+                    
                     <Menu.Item key="3" icon={<FileTextOutlined />}>
                         <Link to="/admin/orders">Đơn hàng</Link>
                     </Menu.Item>
+                    
                     <Menu.Item key="4" icon={<UserOutlined />}>
                         <Link to="/admin/users">Người dùng</Link>
                     </Menu.Item>

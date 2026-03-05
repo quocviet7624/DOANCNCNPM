@@ -7,6 +7,7 @@ const { Option } = Select;
 
 const ProductManagement = () => {
     const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]); // <--- 1. Thêm state lưu danh mục
     const [loading, setLoading] = useState(false);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
@@ -14,8 +15,10 @@ const ProductManagement = () => {
 
     useEffect(() => {
         fetchProducts();
+        fetchCategories(); // <--- 2. Gọi hàm lấy danh mục khi trang tải
     }, []);
 
+    // Hàm lấy danh sách sản phẩm
     const fetchProducts = async () => {
         setLoading(true);
         try {
@@ -25,6 +28,17 @@ const ProductManagement = () => {
             message.error('Không thể tải sản phẩm!');
         }
         setLoading(false);
+    };
+
+    // Hàm lấy danh sách danh mục (MỚI)
+    const fetchCategories = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/categories');
+            setCategories(res.data);
+        } catch (error) {
+            console.error('Lỗi tải danh mục:', error);
+            // Không cần hiện lỗi quá gắt, chỉ log ra console
+        }
     };
 
     const handleAdd = () => {
@@ -160,25 +174,28 @@ const ProductManagement = () => {
                         <Input />
                     </Form.Item>
 
+                    {/* --- PHẦN ĐÃ SỬA: SELECT DYNAMIC --- */}
                     <Form.Item
                         label="Danh mục"
                         name="category"
                         rules={[{ required: true, message: 'Vui lòng chọn danh mục!' }]}
                     >
-                        <Select>
-                            <Option value="Cá">Cá</Option>
-                            <Option value="Cây">Cây</Option>
-                            <Option value="Phụ kiện">Phụ kiện</Option>
-                            <Option value="Thuốc">Thuốc</Option>
+                        <Select placeholder="Chọn danh mục">
+                            {categories.map((cat) => (
+                                <Option key={cat._id} value={cat.name}>
+                                    {cat.name}
+                                </Option>
+                            ))}
                         </Select>
                     </Form.Item>
+                    {/* ----------------------------------- */}
 
                     <Form.Item
                         label="Giá (VNĐ)"
                         name="price"
                         rules={[{ required: true, message: 'Vui lòng nhập giá!' }]}
                     >
-                        <InputNumber style={{ width: '100%' }} min={0} />
+                        <InputNumber style={{ width: '100%' }} min={0} formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} parser={value => value.replace(/\$\s?|(,*)/g, '')} />
                     </Form.Item>
 
                     <Form.Item label="Mô tả" name="description">

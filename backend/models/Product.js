@@ -1,3 +1,4 @@
+// file: server/models/Product.js (hoặc backend/models/Product.js)
 const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
@@ -5,16 +6,26 @@ const productSchema = new mongoose.Schema({
     price: { type: Number, required: true, min: 0 },
     description: { type: String, default: '' },
     image: { type: String, default: 'https://via.placeholder.com/300' },
-    category: { type: String, enum: ['Cá', 'Cây', 'Phụ kiện', 'Thuốc'], required: true },
     stock: { type: Number, default: 100 },
-    // Phần thêm mới cho Review
+    sold: { type: Number, default: 0 },
+    
+    // --- SỬA ĐOẠN NÀY ---
+    category: { 
+        type: String,     
+        required: true, 
+        default: 'Khác' 
+    },
+    // --------------------
+
     reviews: [{
-        userId: String,
-        username: String,
-        rating: Number,
-        comment: String,
+        userId: { type: String, required: true },
+        username: { type: String, required: true },
+        rating: { type: Number, required: true },
+        comment: { type: String, required: true },
         createdAt: { type: Date, default: Date.now }
     }],
+    
+    numReviews: { type: Number, default: 0 },
     avgRating: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now }
 });
