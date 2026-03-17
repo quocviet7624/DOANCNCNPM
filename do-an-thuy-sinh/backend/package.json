@@ -1,0 +1,37 @@
+{
+  "name": "ylang-aquarium-backend",
+  "version": "1.0.0",
+  "description": "Backend API cho website bán hàng thủy sinh",
+  "main": "server.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "seed": "node seed.js"
+  },
+  "keywords": [
+    "aquarium",
+    "nodejs",
+    "express",
+    "mongodb"
+  ],
+  "author": "Ylang Team",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^1.44.0",
+    "axios": "^1.13.6",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "groq-sdk": "^1.1.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.22.1",
+    "multer": "^2.0.2",
+    "socket.io": "^4.8.3",
+    "streamifier": "^0.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
