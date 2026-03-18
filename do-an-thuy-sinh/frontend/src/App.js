@@ -1,3 +1,4 @@
+// App.jsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 
@@ -17,7 +18,7 @@ import AboutPage from './pages/AboutPage';
 import UserProfile from './pages/UserProfile';
 import MyOrders from './pages/MyOrders';
 import AccountSettings from './pages/AccountSettings';
-import WishlistPage from './pages/WishlistPage';   // ← MỚI
+import WishlistPage from './pages/WishlistPage';
 
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -28,10 +29,11 @@ import BannerManagement from './pages/admin/BannerManagement';
 import CategoryManagement from './pages/admin/CategoryManagement';
 import ChatManagement from './pages/admin/ChatManagement';
 import AdminVouchers from './pages/admin/AdminVouchers';
+import AdminReviews from './pages/admin/AdminReviews'; // ← MỚI
 
 // ── Layout khách hàng ──
 const MainLayout = () => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user      = JSON.parse(localStorage.getItem('user') || '{}');
     const userEmail = user?.email || `guest_${Date.now()}@fcjunior.com`;
     return (
         <div className="flex flex-col min-h-screen">
@@ -85,7 +87,7 @@ function App() {
                     <Route path="/profile"     element={<UserProfile />} />
                     <Route path="/my-orders"   element={<MyOrders />} />
                     <Route path="/settings"    element={<AccountSettings />} />
-                    <Route path="/wishlist"    element={<WishlistPage />} />  {/* ← MỚI */}
+                    <Route path="/wishlist"    element={<WishlistPage />} />
                 </Route>
 
                 {/* ── TRANG RIÊNG BIỆT ── */}
@@ -107,6 +109,7 @@ function App() {
                     <Route path="banners"       element={<BannerManagement />} />
                     <Route path="chat"          element={<ChatManagement />} />
                     <Route path="vouchers"      element={<AdminVouchers />} />
+                    <Route path="reviews"       element={<AdminReviews />} /> {/* ← MỚI */}
                     <Route
                         path="users"
                         element={

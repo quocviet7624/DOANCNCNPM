@@ -5,21 +5,24 @@ import {
   UserOutlined,
   FileTextOutlined,
   DollarOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  StarOutlined,
 } from '@ant-design/icons';
 import axios from 'axios';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
-    totalProducts: 0,
+    totalProducts:   0,
     totalCategories: 0,
-    totalUsers: 0,
-    totalOrders: 0,
-    totalRevenue: 0
+    totalUsers:      0,
+    totalOrders:     0,
+    totalRevenue:    0,
+    totalReviews:    0,
+    avgRating:       0,
   });
   const [loading, setLoading] = useState(true);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user    = JSON.parse(localStorage.getItem('user') || '{}');
   const isAdmin = user.role === 'admin';
 
   const fetchStats = useCallback(async () => {
@@ -27,13 +30,13 @@ const AdminDashboard = () => {
     try {
       const token = localStorage.getItem('token');
 
-      // Fetch products & categories (admin + staff đều xem được)
+      // Fetch products & categories
       const [productsRes, categoriesRes] = await Promise.all([
         axios.get('http://localhost:5000/api/products'),
         axios.get('http://localhost:5000/api/categories'),
       ]);
 
-      // Fetch users — chỉ admin mới gọi được
+      // Fetch users — chỉ admin
       let usersCount = 0;
       if (isAdmin) {
         try {
@@ -41,30 +44,49 @@ const AdminDashboard = () => {
             headers: { Authorization: `Bearer ${token}` }
           });
           usersCount = usersRes.data.length;
-        } catch (err) {
-          console.log('⚠️ Không thể tải danh sách users');
-        }
+        } catch { console.log('⚠️ Không thể tải danh sách users'); }
       }
 
-      // Fetch orders (admin + staff đều xem được)
+      // Fetch orders
       let ordersCount = 0;
-      let revenue = 0;
+      let revenue     = 0;
       try {
         const ordersRes = await axios.get('http://localhost:5000/api/orders', {
           headers: { Authorization: `Bearer ${token}` }
         });
         ordersCount = ordersRes.data.length;
-        revenue = ordersRes.data.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-      } catch (err) {
-        console.log('ℹ️ Orders API chưa có hoặc chưa có đơn hàng');
+        revenue     = ordersRes.data.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+      } catch { console.log('ℹ️ Orders API chưa có hoặc chưa có đơn hàng'); }
+
+      // Fetch review stats
+      let totalReviews = 0;
+      let avgRating    = 0;
+      try {
+        const reviewsRes = await axios.get('http://localhost:5000/api/reviews/stats', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        totalReviews = reviewsRes.data.total     || 0;
+        avgRating    = reviewsRes.data.avgRating || 0;
+      } catch {
+        // Fallback: tính từ products nếu /api/reviews/stats chưa sẵn sàng
+        try {
+          const allReviews = [];
+          productsRes.data.forEach(p => (p.reviews || []).forEach(r => allReviews.push(r)));
+          totalReviews = allReviews.length;
+          avgRating    = totalReviews
+            ? (allReviews.reduce((s, r) => s + r.rating, 0) / totalReviews).toFixed(1)
+            : 0;
+        } catch {}
       }
 
       setStats({
-        totalProducts: productsRes.data.length,
+        totalProducts:   productsRes.data.length,
         totalCategories: categoriesRes.data.length,
-        totalUsers: usersCount,
-        totalOrders: ordersCount,
-        totalRevenue: revenue,
+        totalUsers:      usersCount,
+        totalOrders:     ordersCount,
+        totalRevenue:    revenue,
+        totalReviews,
+        avgRating,
       });
 
     } catch (err) {
@@ -74,19 +96,18 @@ const AdminDashboard = () => {
     }
   }, [isAdmin]);
 
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Số cột động theo role
+  const lg = isAdmin ? 4 : 5;
 
   return (
     <div>
-      <h2 style={{ marginBottom: 24, fontSize: 24 }}>
-        📊 Tổng quan hệ thống
-      </h2>
+      <h2 style={{ marginBottom: 24, fontSize: 24 }}>📊 Tổng quan hệ thống</h2>
 
       <Row gutter={[16, 16]}>
-        {/* Sản phẩm — ai cũng thấy */}
-        <Col xs={24} sm={12} lg={isAdmin ? 4 : 6}>
+        {/* Sản phẩm */}
+        <Col xs={24} sm={12} lg={lg}>
           <Card loading={loading}>
             <Statistic
               title="Sản phẩm"
@@ -97,8 +118,8 @@ const AdminDashboard = () => {
           </Card>
         </Col>
 
-        {/* Danh mục — ai cũng thấy */}
-        <Col xs={24} sm={12} lg={isAdmin ? 5 : 6}>
+        {/* Danh mục */}
+        <Col xs={24} sm={12} lg={lg}>
           <Card loading={loading}>
             <Statistic
               title="Danh mục"
@@ -111,7 +132,7 @@ const AdminDashboard = () => {
 
         {/* Người dùng — chỉ admin */}
         {isAdmin && (
-          <Col xs={24} sm={12} lg={5}>
+          <Col xs={24} sm={12} lg={lg}>
             <Card loading={loading}>
               <Statistic
                 title="Người dùng"
@@ -123,8 +144,8 @@ const AdminDashboard = () => {
           </Col>
         )}
 
-        {/* Đơn hàng — ai cũng thấy */}
-        <Col xs={24} sm={12} lg={isAdmin ? 5 : 6}>
+        {/* Đơn hàng */}
+        <Col xs={24} sm={12} lg={lg}>
           <Card loading={loading}>
             <Statistic
               title="Đơn hàng"
@@ -135,8 +156,8 @@ const AdminDashboard = () => {
           </Card>
         </Col>
 
-        {/* Doanh thu — ai cũng thấy */}
-        <Col xs={24} sm={12} lg={isAdmin ? 5 : 6}>
+        {/* Doanh thu */}
+        <Col xs={24} sm={12} lg={lg}>
           <Card loading={loading}>
             <Statistic
               title="Doanh thu"
@@ -145,6 +166,23 @@ const AdminDashboard = () => {
               suffix="₫"
               valueStyle={{ color: '#faad14' }}
             />
+          </Card>
+        </Col>
+
+        {/* Đánh giá */}
+        <Col xs={24} sm={12} lg={lg}>
+          <Card loading={loading}>
+            <Statistic
+              title="Đánh giá"
+              value={stats.totalReviews}
+              prefix={<StarOutlined />}
+              valueStyle={{ color: '#fa8c16' }}
+            />
+            {!loading && stats.totalReviews > 0 && (
+              <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                ⭐ TB: {stats.avgRating} / 5
+              </div>
+            )}
           </Card>
         </Col>
       </Row>
@@ -161,6 +199,7 @@ const AdminDashboard = () => {
           )}
           <li>📋 <strong>Quản lý đơn hàng:</strong> Theo dõi và xử lý đơn đặt hàng</li>
           <li>🎬 <strong>Quản lý Banner:</strong> Cập nhật nội dung trang chủ</li>
+          <li>💬 <strong>Quản lý đánh giá:</strong> Kiểm duyệt đánh giá sản phẩm</li>
         </ul>
       </Card>
     </div>

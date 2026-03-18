@@ -8,29 +8,35 @@ const { Meta } = Card;
 const { Option } = Select;
 const { Search } = Input;
 
+// ── Helper dùng chung ────────────────────────────────────────────────────────
+const getUserId = () => {
+    try {
+        const userObj = JSON.parse(localStorage.getItem('user') || '{}');
+        return userObj._id || userObj.id || localStorage.getItem('userId') || null;
+    } catch {
+        return localStorage.getItem('userId') || null;
+    }
+};
+
 const Products = () => {
     const navigate = useNavigate();
     const [products, setProducts] = useState([]);
     const [filteredProducts, setFilteredProducts] = useState([]);
-    // 1. Thêm state để lưu danh mục
-    const [categories, setCategories] = useState([]); 
+    const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('all');
 
     useEffect(() => {
-        // 2. Gọi cả 2 API khi trang load
         fetchProducts();
         fetchCategories();
     }, []);
 
-    // 3. Hàm lấy danh sách danh mục từ Server
     const fetchCategories = async () => {
         try {
             const res = await axios.get('http://localhost:5000/api/categories');
             setCategories(res.data);
         } catch (error) {
             console.error('Lỗi tải danh mục:', error);
-            // Không cần alert lỗi này để tránh làm phiền user, chỉ cần log
         }
     };
 
@@ -39,9 +45,9 @@ const Products = () => {
             const res = await axios.get('http://localhost:5000/api/products');
             setProducts(res.data);
             setFilteredProducts(res.data);
-            setLoading(false);
         } catch (error) {
             message.error('Không thể tải danh sách sản phẩm!');
+        } finally {
             setLoading(false);
         }
     };
@@ -57,14 +63,9 @@ const Products = () => {
 
     const filterData = (category, keyword) => {
         let temp = [...products];
-
-        if (category !== 'all') {
-            // So sánh tên danh mục (String)
-            temp = temp.filter(p => p.category === category);
-        }
-
+        if (category !== 'all') temp = temp.filter(p => p.category === category);
         if (keyword) {
-            temp = temp.filter(p => 
+            temp = temp.filter(p =>
                 p.name.toLowerCase().includes(keyword.toLowerCase()) ||
                 (p.description && p.description.toLowerCase().includes(keyword.toLowerCase()))
             );
@@ -74,8 +75,8 @@ const Products = () => {
 
     const addToCart = (e, product) => {
         e.stopPropagation();
-        const userId = localStorage.getItem('userId') || JSON.parse(localStorage.getItem('user') || '{}')._id;
-        
+
+        const userId = getUserId();
         if (!userId) {
             message.warning('Vui lòng đăng nhập để mua hàng!');
             navigate('/login');
@@ -84,13 +85,11 @@ const Products = () => {
 
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         const existingItem = cart.find(item => item._id === product._id);
-        
         if (existingItem) {
             existingItem.quantity += 1;
         } else {
             cart.push({ ...product, quantity: 1 });
         }
-        
         localStorage.setItem('cart', JSON.stringify(cart));
         window.dispatchEvent(new Event('storage'));
         message.success(`Đã thêm ${product.name} vào giỏ!`);
@@ -120,16 +119,10 @@ const Products = () => {
                             style={{ width: '100%' }}
                             size="large"
                         >
-                            {/* Option mặc định */}
                             <Option value="all">Tất cả danh mục</Option>
-                            
-                            {/* 4. Render danh mục động từ State */}
                             {categories.map((cat) => (
-                                <Option key={cat._id} value={cat.name}>
-                                    {cat.name}
-                                </Option>
+                                <Option key={cat._id} value={cat.name}>{cat.name}</Option>
                             ))}
-
                         </Select>
                     </Col>
                 </Row>
@@ -150,8 +143,8 @@ const Products = () => {
                                     />
                                 }
                                 actions={[
-                                    <Button 
-                                        type="primary" 
+                                    <Button
+                                        type="primary"
                                         onClick={(e) => addToCart(e, product)}
                                         icon={<ShoppingCartOutlined />}
                                         style={{ background: '#fadb14', borderColor: '#fadb14', color: '#000' }}

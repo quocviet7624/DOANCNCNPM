@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "test": "jest"
   },
   "keywords": [
     "aquarium",
@@ -35,3 +36,4 @@
     "nodemon": "^3.0.2"
   }
 }
+

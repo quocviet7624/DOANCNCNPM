@@ -66,7 +66,8 @@ const orderRoutes        = require('./routes/orderRoutes');
 const authRoutes         = require('./routes/authRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
 const voucherRoutes      = require('./routes/voucherRoutes');
-const wishlistRoutes     = require('./routes/wishlist.route'); // 👈 THÊM MỚI
+const wishlistRoutes     = require('./routes/wishlist.route');
+const reviewRoutes       = require('./routes/reviewRoutes'); // 👈 THÊM MỚI
 
 // ========== SỬ DỤNG ROUTES ==========
 app.use('/api/products',      productRoutes);
@@ -76,7 +77,8 @@ app.use('/api/auth',          authRoutes);
 app.use('/api/banners',       bannerRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/vouchers',      voucherRoutes);
-app.use('/api/wishlist',      wishlistRoutes); // 👈 THÊM MỚI
+app.use('/api/wishlist',      wishlistRoutes);
+app.use('/api/reviews',       reviewRoutes); // 👈 THÊM MỚI
 
 // ========== ROUTE CHẠY THỬ ==========
 app.get('/', (req, res) => {
@@ -90,7 +92,8 @@ app.get('/', (req, res) => {
             banners:       '/api/banners',
             conversations: '/api/conversations',
             vouchers:      '/api/vouchers',
-            wishlist:      '/api/wishlist', // 👈 THÊM MỚI
+            wishlist:      '/api/wishlist',
+            reviews:       '/api/reviews', // 👈 THÊM MỚI
         }
     });
 });
@@ -102,5 +105,6 @@ server.listen(PORT, () => {
     console.log(`🔗 API Endpoints sẵn sàng!`);
     console.log(`🔌 Socket.io đã kích hoạt!`);
     console.log(`🏷️  Voucher API: /api/vouchers`);
-    console.log(`❤️  Wishlist API: /api/wishlist`); // 👈 THÊM MỚI
+    console.log(`❤️  Wishlist API: /api/wishlist`);
+    console.log(`💬 Reviews API: /api/reviews`); // 👈 THÊM MỚI
 });
