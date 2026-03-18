@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Button, Select, Input, message, Spin, Tag, Empty } from 'antd';
 import { ShoppingCartOutlined, SearchOutlined, StarFilled } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
 const { Meta } = Card;
 const { Option } = Select;
 const { Search } = Input;
 
-// ── Helper dùng chung ────────────────────────────────────────────────────────
 const getUserId = () => {
     try {
         const userObj = JSON.parse(localStorage.getItem('user') || '{}');
@@ -20,23 +19,38 @@ const getUserId = () => {
 
 const Products = () => {
     const navigate = useNavigate();
-    const [products, setProducts] = useState([]);
+    const location = useLocation();
+
+    const [products,         setProducts]         = useState([]);
     const [filteredProducts, setFilteredProducts] = useState([]);
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [categories,       setCategories]       = useState([]);
+    const [loading,          setLoading]          = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('all');
+    const [searchText,       setSearchText]       = useState('');
+
+    // ── Đọc ?search= từ URL mỗi khi URL thay đổi (navbar search) ────────────
+    useEffect(() => {
+        const params  = new URLSearchParams(location.search);
+        const keyword = params.get('search') || '';
+        setSearchText(keyword);
+    }, [location.search]);
 
     useEffect(() => {
         fetchProducts();
         fetchCategories();
     }, []);
 
+    // ── Lọc lại khi searchText hoặc category hoặc products thay đổi ─────────
+    useEffect(() => {
+        filterData(selectedCategory, searchText);
+    }, [searchText, selectedCategory, products]);
+
     const fetchCategories = async () => {
         try {
             const res = await axios.get('http://localhost:5000/api/categories');
             setCategories(res.data);
-        } catch (error) {
-            console.error('Lỗi tải danh mục:', error);
+        } catch (err) {
+            console.error('Lỗi tải danh mục:', err);
         }
     };
 
@@ -45,44 +59,47 @@ const Products = () => {
             const res = await axios.get('http://localhost:5000/api/products');
             setProducts(res.data);
             setFilteredProducts(res.data);
-        } catch (error) {
+        } catch {
             message.error('Không thể tải danh sách sản phẩm!');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleCategoryChange = (value) => {
-        setSelectedCategory(value);
-        filterData(value, document.getElementById('search-input')?.value || '');
-    };
-
-    const handleSearch = (value) => {
-        filterData(selectedCategory, value);
-    };
-
     const filterData = (category, keyword) => {
         let temp = [...products];
-        if (category !== 'all') temp = temp.filter(p => p.category === category);
-        if (keyword) {
+        if (category !== 'all') {
+            temp = temp.filter(p => p.category === category);
+        }
+        if (keyword && keyword.trim()) {
+            const q = keyword.trim().toLowerCase();
             temp = temp.filter(p =>
-                p.name.toLowerCase().includes(keyword.toLowerCase()) ||
-                (p.description && p.description.toLowerCase().includes(keyword.toLowerCase()))
+                p.name.toLowerCase().includes(q) ||
+                (p.description && p.description.toLowerCase().includes(q))
             );
         }
         setFilteredProducts(temp);
     };
 
+    // Tìm kiếm nội bộ trong trang — cập nhật URL luôn để đồng bộ navbar
+    const handleSearch = (value) => {
+        const keyword = value.trim();
+        setSearchText(keyword);
+        if (keyword) {
+            navigate(`/products?search=${encodeURIComponent(keyword)}`, { replace: true });
+        } else {
+            navigate('/products', { replace: true });
+        }
+    };
+
     const addToCart = (e, product) => {
         e.stopPropagation();
-
         const userId = getUserId();
         if (!userId) {
             message.warning('Vui lòng đăng nhập để mua hàng!');
             navigate('/login');
             return;
         }
-
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         const existingItem = cart.find(item => item._id === product._id);
         if (existingItem) {
@@ -104,28 +121,44 @@ const Products = () => {
                 <Row gutter={16}>
                     <Col xs={24} md={12}>
                         <Search
-                            id="search-input"
                             placeholder="Tìm kiếm cá, cây, phụ kiện..."
+                            value={searchText}
+                            onChange={e => setSearchText(e.target.value)}
                             onSearch={handleSearch}
+                            allowClear
+                            onClear={() => handleSearch('')}
                             enterButton={<SearchOutlined />}
                             size="large"
-                            allowClear
                         />
                     </Col>
                     <Col xs={24} md={12} style={{ marginTop: window.innerWidth < 768 ? 10 : 0 }}>
                         <Select
                             value={selectedCategory}
-                            onChange={handleCategoryChange}
+                            onChange={setSelectedCategory}
                             style={{ width: '100%' }}
                             size="large"
                         >
                             <Option value="all">Tất cả danh mục</Option>
-                            {categories.map((cat) => (
+                            {categories.map(cat => (
                                 <Option key={cat._id} value={cat.name}>{cat.name}</Option>
                             ))}
                         </Select>
                     </Col>
                 </Row>
+
+                {searchText && (
+                    <div style={{ marginTop: 10, fontSize: 13, color: '#888' }}>
+                        🔍 Kết quả cho: <strong style={{ color: '#004d40' }}>"{searchText}"</strong>
+                        {' '}— {filteredProducts.length} sản phẩm
+                        <Button
+                            type="link" size="small"
+                            onClick={() => handleSearch('')}
+                            style={{ color: '#f5222d', padding: '0 4px' }}
+                        >
+                            Xóa tìm kiếm
+                        </Button>
+                    </div>
+                )}
             </div>
 
             <Row gutter={[16, 16]}>
@@ -172,7 +205,13 @@ const Products = () => {
                     ))
                 ) : (
                     <div style={{ width: '100%', padding: 50 }}>
-                        <Empty description="Không tìm thấy sản phẩm nào" />
+                        <Empty
+                            description={
+                                searchText
+                                    ? `Không tìm thấy sản phẩm nào cho "${searchText}"`
+                                    : 'Không tìm thấy sản phẩm nào'
+                            }
+                        />
                     </div>
                 )}
             </Row>

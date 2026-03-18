@@ -9,7 +9,7 @@ import {
   UserAddOutlined,
   LoginOutlined,
   DownOutlined,
-  HeartOutlined,     // ← MỚI
+  HeartOutlined,
 } from '@ant-design/icons';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -30,33 +30,29 @@ const ROLE_CONFIG = {
 };
 
 const AppNavbar = () => {
-  const [cartCount, setCartCount]         = useState(0);
-  const [wishlistCount, setWishlistCount] = useState(0); // ← MỚI
-  const [user, setUser]                   = useState(null);
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const [cartCount,     setCartCount]     = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
+  const [user,          setUser]          = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     updateCartCount();
     loadUserInfo();
-
     const handleStorageChange = () => { updateCartCount(); loadUserInfo(); };
-    window.addEventListener('storage',       handleStorageChange);
-    window.addEventListener('cartChange',    updateCartCount);
-    window.addEventListener('userChanged',   loadUserInfo);
-    window.addEventListener('wishlistChange', updateWishlistCount); // ← MỚI
+    window.addEventListener('storage',        handleStorageChange);
+    window.addEventListener('cartChange',     updateCartCount);
+    window.addEventListener('userChanged',    loadUserInfo);
+    window.addEventListener('wishlistChange', updateWishlistCount);
     return () => {
-      window.removeEventListener('storage',       handleStorageChange);
-      window.removeEventListener('cartChange',    updateCartCount);
-      window.removeEventListener('userChanged',   loadUserInfo);
+      window.removeEventListener('storage',        handleStorageChange);
+      window.removeEventListener('cartChange',     updateCartCount);
+      window.removeEventListener('userChanged',    loadUserInfo);
       window.removeEventListener('wishlistChange', updateWishlistCount);
     };
   }, []);
 
-  // Cập nhật wishlist count khi user thay đổi
-  useEffect(() => {
-    updateWishlistCount();
-  }, [user]);
+  useEffect(() => { updateWishlistCount(); }, [user]);
 
   const updateCartCount = () => {
     const cart  = JSON.parse(localStorage.getItem('cart') || '[]');
@@ -64,13 +60,12 @@ const AppNavbar = () => {
     setCartCount(total);
   };
 
-  // ← MỚI: lấy số wishlist từ API
   const updateWishlistCount = async () => {
     try {
-      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      const u      = JSON.parse(localStorage.getItem('user') || '{}');
       const userId = u?._id || u?.id;
       if (!userId) { setWishlistCount(0); return; }
-      const res = await fetch(`http://localhost:5000/api/wishlist/${userId}`);
+      const res  = await fetch(`http://localhost:5000/api/wishlist/${userId}`);
       const data = await res.json();
       setWishlistCount(Array.isArray(data) ? data.length : 0);
     } catch {
@@ -98,19 +93,25 @@ const AppNavbar = () => {
     navigate('/');
   };
 
+  // ── Navigate đến /products?search=... ─────────────────────────────────────
   const handleSearch = (value) => {
-    if (value.trim()) navigate(`/products?search=${value}`);
+    const keyword = value.trim();
+    if (keyword) {
+      navigate(`/products?search=${encodeURIComponent(keyword)}`);
+    } else {
+      navigate('/products');
+    }
   };
 
   const isStaff = ['admin', 'staff'].includes(user?.role);
   const roleCfg = ROLE_CONFIG[user?.role] || null;
 
   const userMenuItems = [
-    { key: 'profile',  icon: <UserOutlined />,    label: 'Thông tin cá nhân',  onClick: () => navigate('/profile') },
+    { key: 'profile',  icon: <UserOutlined />,    label: 'Thông tin cá nhân',   onClick: () => navigate('/profile') },
     ...(isStaff ? [{ key: 'admin', icon: <DashboardOutlined />, label: 'Trang quản trị', onClick: () => navigate('/admin') }] : []),
-    { key: 'orders',   icon: <ShoppingOutlined />, label: 'Đơn hàng của tôi',   onClick: () => navigate('/my-orders') },
-    { key: 'wishlist', icon: <HeartOutlined />,    label: 'Sản phẩm yêu thích', onClick: () => navigate('/wishlist') }, // ← MỚI
-    { key: 'settings', icon: <SettingOutlined />,  label: 'Cài đặt tài khoản',  onClick: () => navigate('/settings') },
+    { key: 'orders',   icon: <ShoppingOutlined />, label: 'Đơn hàng của tôi',    onClick: () => navigate('/my-orders') },
+    { key: 'wishlist', icon: <HeartOutlined />,    label: 'Sản phẩm yêu thích',  onClick: () => navigate('/wishlist') },
+    { key: 'settings', icon: <SettingOutlined />,  label: 'Cài đặt tài khoản',   onClick: () => navigate('/settings') },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: 'Đăng xuất', danger: true, onClick: handleLogout },
   ];
@@ -165,14 +166,14 @@ const AppNavbar = () => {
           style={{ flex: 1, minWidth: 0 }}
         />
 
+        {/* ── Search: không dùng controlled value để tránh conflict với Products ── */}
         <Search
           placeholder="Tìm sản phẩm..."
           onSearch={handleSearch}
-          style={{ width: 200, marginRight: 12, flexShrink: 0 }}
           allowClear
+          style={{ width: 220, marginRight: 12, flexShrink: 0 }}
         />
 
-        {/* ← MỚI: icon tim wishlist (chỉ hiện khi đã login) */}
         {user && (
           <Link to="/wishlist" className="fc-icon-btn" style={{ marginRight: 8 }}>
             <Badge count={wishlistCount} size="small" offset={[4, -2]}>
