@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Row, Col, Button, Select, Input, message, Spin, Tag, Empty } from 'antd';
 import { ShoppingCartOutlined, SearchOutlined, StarFilled } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -38,12 +38,28 @@ const Products = () => {
     useEffect(() => {
         fetchProducts();
         fetchCategories();
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── Lọc lại khi searchText hoặc category hoặc products thay đổi ─────────
+    // ── filterData bọc trong useCallback để tránh warning exhaustive-deps ────
+    const filterData = useCallback((category, keyword) => {
+        let temp = [...products];
+        if (category !== 'all') {
+            temp = temp.filter(p => p.category === category);
+        }
+        if (keyword && keyword.trim()) {
+            const q = keyword.trim().toLowerCase();
+            temp = temp.filter(p =>
+                p.name.toLowerCase().includes(q) ||
+                (p.description && p.description.toLowerCase().includes(q))
+            );
+        }
+        setFilteredProducts(temp);
+    }, [products]);
+
+    // ── Lọc lại khi searchText, category hoặc products thay đổi ─────────────
     useEffect(() => {
         filterData(selectedCategory, searchText);
-    }, [searchText, selectedCategory, products]);
+    }, [searchText, selectedCategory, filterData]);
 
     const fetchCategories = async () => {
         try {
@@ -66,22 +82,7 @@ const Products = () => {
         }
     };
 
-    const filterData = (category, keyword) => {
-        let temp = [...products];
-        if (category !== 'all') {
-            temp = temp.filter(p => p.category === category);
-        }
-        if (keyword && keyword.trim()) {
-            const q = keyword.trim().toLowerCase();
-            temp = temp.filter(p =>
-                p.name.toLowerCase().includes(q) ||
-                (p.description && p.description.toLowerCase().includes(q))
-            );
-        }
-        setFilteredProducts(temp);
-    };
-
-    // Tìm kiếm nội bộ trong trang — cập nhật URL luôn để đồng bộ navbar
+    // Tìm kiếm nội bộ — đồng bộ URL để navbar cũng hiển thị đúng
     const handleSearch = (value) => {
         const keyword = value.trim();
         setSearchText(keyword);

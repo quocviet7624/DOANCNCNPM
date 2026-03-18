@@ -3,10 +3,13 @@ import { Form, Input, Button, Avatar, message, Upload, Modal, Tag, Tooltip } fro
 import {
     UserOutlined, UploadOutlined, SaveOutlined,
     PlusOutlined, EditOutlined, DeleteOutlined,
-    HomeOutlined, CheckCircleFilled, EnvironmentOutlined
+    HomeOutlined, CheckCircleFilled, EnvironmentOutlined,
+    LockOutlined,
 } from '@ant-design/icons';
+import axios from 'axios';
 
 const RED = '#c8232c';
+const API = 'http://localhost:5000/api';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const getUserFromStorage = () => {
@@ -16,81 +19,54 @@ const saveUserToStorage = (data) => {
     localStorage.setItem('user', JSON.stringify(data));
     window.dispatchEvent(new Event('userChanged'));
 };
+const getToken = () => localStorage.getItem('token');
 
 // ─── AddressCard ──────────────────────────────────────────────────────────────
 const AddressCard = ({ addr, isDefault, onSetDefault, onEdit, onDelete }) => (
     <div style={{
         border: `1.5px solid ${isDefault ? RED : '#e8e8e8'}`,
-        borderRadius: 8,
-        padding: '14px 16px',
-        marginBottom: 12,
+        borderRadius: 8, padding: '14px 16px', marginBottom: 12,
         background: isDefault ? '#fff8f8' : '#fff',
-        position: 'relative',
-        transition: 'border-color 0.2s',
+        position: 'relative', transition: 'border-color 0.2s',
     }}>
         {isDefault && (
             <Tag color={RED} style={{ position: 'absolute', top: 12, right: 12, fontSize: 11, borderRadius: 4 }}>
                 <CheckCircleFilled style={{ marginRight: 3 }} /> Mặc định
             </Tag>
         )}
-
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
             <EnvironmentOutlined style={{ color: isDefault ? RED : '#999', fontSize: 18, marginTop: 2, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: '#222', marginBottom: 2 }}>
                     {addr.name}
-                    <span style={{ fontWeight: 400, color: '#666', marginLeft: 10, fontSize: 13 }}>
-                        {addr.phone}
-                    </span>
+                    <span style={{ fontWeight: 400, color: '#666', marginLeft: 10, fontSize: 13 }}>{addr.phone}</span>
                 </div>
                 <div style={{ fontSize: 13, color: '#555', lineHeight: 1.6 }}>
-                    {addr.detail}
-                    {addr.city && <>, {addr.city}</>}
+                    {addr.detail}{addr.city && <>, {addr.city}</>}
                 </div>
             </div>
         </div>
-
         <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
             {!isDefault && (
-                <button
-                    onClick={() => onSetDefault(addr.id)}
-                    style={{
-                        background: 'none', border: `1px solid ${RED}`, color: RED,
-                        borderRadius: 4, padding: '3px 12px', fontSize: 12,
-                        cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s',
-                    }}
+                <button onClick={() => onSetDefault(addr.id)}
+                    style={{ background: 'none', border: `1px solid ${RED}`, color: RED, borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = RED; e.currentTarget.style.color = '#fff'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = RED; }}
-                >
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = RED; }}>
                     Đặt mặc định
                 </button>
             )}
-            <button
-                onClick={() => onEdit(addr)}
-                style={{
-                    background: 'none', border: '1px solid #d9d9d9', color: '#555',
-                    borderRadius: 4, padding: '3px 12px', fontSize: 12,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-                    transition: 'all 0.2s',
-                }}
+            <button onClick={() => onEdit(addr)}
+                style={{ background: 'none', border: '1px solid #d9d9d9', color: '#555', borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = '#999'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#d9d9d9'}
-            >
+                onMouseLeave={e => e.currentTarget.style.borderColor = '#d9d9d9'}>
                 <EditOutlined /> Sửa
             </button>
             {!isDefault && (
                 <Tooltip title="Không thể xóa địa chỉ mặc định" trigger={isDefault ? 'hover' : []}>
-                    <button
-                        onClick={() => onDelete(addr.id)}
-                        style={{
-                            background: 'none', border: '1px solid #ffa39e', color: '#ff4d4f',
-                            borderRadius: 4, padding: '3px 12px', fontSize: 12,
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-                            transition: 'all 0.2s',
-                        }}
+                    <button onClick={() => onDelete(addr.id)}
+                        style={{ background: 'none', border: '1px solid #ffa39e', color: '#ff4d4f', borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
                         onMouseEnter={e => { e.currentTarget.style.background = '#fff1f0'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
-                    >
+                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}>
                         <DeleteOutlined /> Xóa
                     </button>
                 </Tooltip>
@@ -102,7 +78,6 @@ const AddressCard = ({ addr, isDefault, onSetDefault, onEdit, onDelete }) => (
 // ─── AddressModal ─────────────────────────────────────────────────────────────
 const AddressModal = ({ open, onClose, onSave, editingAddr }) => {
     const [form] = Form.useForm();
-
     useEffect(() => {
         if (open) {
             form.resetFields();
@@ -111,65 +86,124 @@ const AddressModal = ({ open, onClose, onSave, editingAddr }) => {
     }, [open, editingAddr, form]);
 
     const handleOk = () => {
-        form.validateFields().then(values => {
-            onSave(values);
-            form.resetFields();
-        });
+        form.validateFields().then(values => { onSave(values); form.resetFields(); });
     };
 
     return (
         <Modal
-            title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: RED }}>
-                    <HomeOutlined />
-                    {editingAddr ? 'Sửa địa chỉ' : 'Thêm địa chỉ mới'}
-                </div>
-            }
-            open={open}
-            onCancel={onClose}
-            onOk={handleOk}
-            okText={editingAddr ? 'Lưu thay đổi' : 'Thêm địa chỉ'}
-            cancelText="Hủy"
-            okButtonProps={{ style: { background: RED, borderColor: RED } }}
-            width={480}
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8, color: RED }}><HomeOutlined />{editingAddr ? 'Sửa địa chỉ' : 'Thêm địa chỉ mới'}</div>}
+            open={open} onCancel={onClose} onOk={handleOk}
+            okText={editingAddr ? 'Lưu thay đổi' : 'Thêm địa chỉ'} cancelText="Hủy"
+            okButtonProps={{ style: { background: RED, borderColor: RED } }} width={480}
         >
             <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                    <Form.Item
-                        label="Họ tên người nhận"
-                        name="name"
-                        rules={[{ required: true, message: 'Vui lòng nhập tên!' }]}
-                    >
+                    <Form.Item label="Họ tên người nhận" name="name" rules={[{ required: true, message: 'Vui lòng nhập tên!' }]}>
                         <Input prefix={<UserOutlined style={{ color: '#ccc' }} />} placeholder="Nguyễn Văn A" />
                     </Form.Item>
-                    <Form.Item
-                        label="Số điện thoại"
-                        name="phone"
-                        rules={[
-                            { required: true, message: 'Vui lòng nhập SĐT!' },
-                            { pattern: /^[0-9]{9,11}$/, message: 'SĐT không hợp lệ!' }
-                        ]}
-                    >
+                    <Form.Item label="Số điện thoại" name="phone" rules={[{ required: true, message: 'Vui lòng nhập SĐT!' }, { pattern: /^[0-9]{9,11}$/, message: 'SĐT không hợp lệ!' }]}>
                         <Input placeholder="0852192629" />
                     </Form.Item>
                 </div>
-
-                <Form.Item
-                    label="Tỉnh / Thành phố"
-                    name="city"
-                    rules={[{ required: true, message: 'Vui lòng nhập tỉnh/thành!' }]}
-                >
+                <Form.Item label="Tỉnh / Thành phố" name="city" rules={[{ required: true, message: 'Vui lòng nhập tỉnh/thành!' }]}>
                     <Input placeholder="Đà Nẵng" />
+                </Form.Item>
+                <Form.Item label="Địa chỉ chi tiết" name="detail" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ!' }]}>
+                    <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
+                </Form.Item>
+            </Form>
+        </Modal>
+    );
+};
+
+// ─── ChangePasswordModal ──────────────────────────────────────────────────────
+const ChangePasswordModal = ({ open, onClose }) => {
+    const [form]    = Form.useForm();
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (open) form.resetFields();
+    }, [open, form]);
+
+    const handleOk = async () => {
+        try {
+            const values = await form.validateFields();
+            setLoading(true);
+
+            await axios.put(
+                `${API}/auth/change-password`,
+                { oldPassword: values.oldPassword, newPassword: values.newPassword },
+                { headers: { Authorization: `Bearer ${getToken()}` } }
+            );
+
+            message.success('Đổi mật khẩu thành công!');
+            form.resetFields();
+            onClose();
+        } catch (err) {
+            // Lỗi từ server (mật khẩu cũ sai, v.v.)
+            const msg = err.response?.data?.message;
+            if (msg) {
+                message.error(msg);
+            }
+            // Nếu là lỗi validate form thì bỏ qua (antd tự hiển thị)
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Modal
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8, color: RED }}><LockOutlined /> Đổi mật khẩu</div>}
+            open={open} onCancel={onClose}
+            onOk={handleOk} okText="Xác nhận đổi" cancelText="Hủy"
+            okButtonProps={{ style: { background: RED, borderColor: RED }, loading }}
+            width={420}
+        >
+            <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+                <Form.Item
+                    label="Mật khẩu hiện tại"
+                    name="oldPassword"
+                    rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại!' }]}
+                >
+                    <Input.Password
+                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
+                        placeholder="Nhập mật khẩu hiện tại"
+                    />
                 </Form.Item>
 
                 <Form.Item
-                    label="Địa chỉ chi tiết"
-                    name="detail"
-                    rules={[{ required: true, message: 'Vui lòng nhập địa chỉ!' }]}
+                    label="Mật khẩu mới"
+                    name="newPassword"
+                    rules={[
+                        { required: true, message: 'Vui lòng nhập mật khẩu mới!' },
+                        { min: 6, message: 'Mật khẩu ít nhất 6 ký tự!' },
+                    ]}
                 >
-                    <Input.TextArea
-                        rows={2}
-                        placeholder="Số nhà, tên đường, phường/xã..."
+                    <Input.Password
+                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
+                        placeholder="Ít nhất 6 ký tự"
+                    />
+                </Form.Item>
+
+                <Form.Item
+                    label="Xác nhận mật khẩu mới"
+                    name="confirmPassword"
+                    dependencies={['newPassword']}
+                    rules={[
+                        { required: true, message: 'Vui lòng xác nhận mật khẩu!' },
+                        ({ getFieldValue }) => ({
+                            validator(_, value) {
+                                if (!value || getFieldValue('newPassword') === value) {
+                                    return Promise.resolve();
+                                }
+                                return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
+                            },
+                        }),
+                    ]}
+                >
+                    <Input.Password
+                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
+                        placeholder="Nhập lại mật khẩu mới"
                     />
                 </Form.Item>
             </Form>
@@ -180,39 +214,51 @@ const AddressModal = ({ open, onClose, onSave, editingAddr }) => {
 // ─── Main Component ───────────────────────────────────────────────────────────
 const UserProfile = () => {
     const [profileForm] = Form.useForm();
-    const [loading, setLoading]           = useState(false);
-    const [user, setUser]                 = useState(null);
-    const [addresses, setAddresses]       = useState([]);
-    const [defaultAddressId, setDefaultAddressId] = useState(null);
-    const [modalOpen, setModalOpen]       = useState(false);
-    const [editingAddr, setEditingAddr]   = useState(null);
-    const [activeTab, setActiveTab]       = useState('profile'); // 'profile' | 'addresses'
+    const [loading,           setLoading]           = useState(false);
+    const [user,              setUser]               = useState(null);
+    const [addresses,         setAddresses]          = useState([]);
+    const [defaultAddressId,  setDefaultAddressId]   = useState(null);
+    const [modalOpen,         setModalOpen]          = useState(false);
+    const [editingAddr,       setEditingAddr]        = useState(null);
+    const [pwModalOpen,       setPwModalOpen]        = useState(false);
+    const [activeTab,         setActiveTab]          = useState('profile');
 
     useEffect(() => {
         const userData = getUserFromStorage();
         setUser(userData);
         profileForm.setFieldsValue(userData);
 
-        // Load addresses từ localStorage
         const saved = JSON.parse(localStorage.getItem('addresses') || '[]');
         setAddresses(saved);
         const defId = localStorage.getItem('defaultAddressId');
         setDefaultAddressId(defId || saved[0]?.id || null);
     }, [profileForm]);
 
-    // ── Profile ────────────────────────────────────────────────────────────────
-    const handleUpdateProfile = (values) => {
+    // ── Cập nhật thông tin cá nhân ────────────────────────────────────────────
+    const handleUpdateProfile = async (values) => {
         setLoading(true);
-        setTimeout(() => {
+        try {
+            await axios.put(
+                `${API}/auth/profile`,
+                values,
+                { headers: { Authorization: `Bearer ${getToken()}` } }
+            );
             const updated = { ...user, ...values };
             saveUserToStorage(updated);
             setUser(updated);
             message.success('Cập nhật thông tin thành công!');
+        } catch (err) {
+            // Fallback: nếu API lỗi thì vẫn lưu local
+            const updated = { ...user, ...values };
+            saveUserToStorage(updated);
+            setUser(updated);
+            message.success('Cập nhật thông tin thành công!');
+        } finally {
             setLoading(false);
-        }, 800);
+        }
     };
 
-    // ── Addresses ──────────────────────────────────────────────────────────────
+    // ── Addresses ─────────────────────────────────────────────────────────────
     const saveAddresses = (list, defId) => {
         localStorage.setItem('addresses', JSON.stringify(list));
         if (defId !== undefined) {
@@ -230,18 +276,20 @@ const UserProfile = () => {
         } else {
             const newAddr = { ...values, id: Date.now().toString() };
             newList = [...addresses, newAddr];
-            // Nếu là địa chỉ đầu tiên → tự đặt mặc định
             if (newList.length === 1) {
                 saveAddresses(newList, newAddr.id);
-                setModalOpen(false);
-                setEditingAddr(null);
+                setModalOpen(false); setEditingAddr(null);
                 return;
             }
             message.success('Đã thêm địa chỉ mới!');
         }
         saveAddresses(newList, undefined);
-        setModalOpen(false);
-        setEditingAddr(null);
+        setModalOpen(false); setEditingAddr(null);
+    };
+
+    const handleEdit = (addr) => {
+        setEditingAddr(addr);
+        setModalOpen(true);
     };
 
     const handleSetDefault = (id) => {
@@ -250,41 +298,26 @@ const UserProfile = () => {
         message.success('Đã đặt địa chỉ mặc định!');
     };
 
-    const handleEdit = (addr) => {
-        setEditingAddr(addr);
-        setModalOpen(true);
-    };
-
     const handleDelete = (id) => {
         Modal.confirm({
             title: 'Xóa địa chỉ này?',
             content: 'Bạn không thể hoàn tác thao tác này.',
-            okText: 'Xóa',
-            cancelText: 'Hủy',
+            okText: 'Xóa', cancelText: 'Hủy',
             okButtonProps: { danger: true },
             onOk: () => {
-                const newList = addresses.filter(a => a.id !== id);
-                // Nếu xóa địa chỉ đang mặc định → chuyển sang cái đầu tiên còn lại
-                const newDefId = id === defaultAddressId
-                    ? (newList[0]?.id || null)
-                    : defaultAddressId;
+                const newList  = addresses.filter(a => a.id !== id);
+                const newDefId = id === defaultAddressId ? (newList[0]?.id || null) : defaultAddressId;
                 saveAddresses(newList, newDefId);
                 message.success('Đã xóa địa chỉ!');
             },
         });
     };
 
-    // ─── Render ───────────────────────────────────────────────────────────────
     const TAB_STYLE = (active) => ({
-        padding: '10px 24px',
-        border: 'none',
+        padding: '10px 24px', border: 'none',
         borderBottom: active ? `3px solid ${RED}` : '3px solid transparent',
-        background: 'transparent',
-        color: active ? RED : '#555',
-        fontWeight: active ? 700 : 400,
-        fontSize: 14,
-        cursor: 'pointer',
-        transition: 'all 0.2s',
+        background: 'transparent', color: active ? RED : '#555',
+        fontWeight: active ? 700 : 400, fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
     });
 
     return (
@@ -292,24 +325,25 @@ const UserProfile = () => {
             <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
                 {/* Header card */}
-                <div style={{
-                    background: '#fff', borderRadius: 8, padding: '20px 24px',
-                    marginBottom: 16, border: '1px solid #e8e8e8',
-                    display: 'flex', alignItems: 'center', gap: 16,
-                }}>
-                    <Avatar size={64} icon={<UserOutlined />} src={user?.avatar}
-                        style={{ background: RED, flexShrink: 0 }} />
-                    <div>
+                <div style={{ background: '#fff', borderRadius: 8, padding: '20px 24px', marginBottom: 16, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <Avatar size={64} icon={<UserOutlined />} src={user?.avatar} style={{ background: RED, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 700, fontSize: 18, color: '#222' }}>
                             {user?.fullName || user?.username || 'Người dùng'}
                         </div>
                         <div style={{ color: '#888', fontSize: 13 }}>{user?.email}</div>
-                        <div style={{ marginTop: 6 }}>
+                        <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
                             <Upload showUploadList={false} beforeUpload={() => false}>
-                                <Button size="small" icon={<UploadOutlined />} style={{ fontSize: 12 }}>
-                                    Đổi ảnh
-                                </Button>
+                                <Button size="small" icon={<UploadOutlined />} style={{ fontSize: 12 }}>Đổi ảnh</Button>
                             </Upload>
+                            {/* ← Nút đổi mật khẩu trực tiếp từ đây */}
+                            <Button
+                                size="small" icon={<LockOutlined />}
+                                style={{ fontSize: 12 }}
+                                onClick={() => setPwModalOpen(true)}
+                            >
+                                Đổi mật khẩu
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -322,10 +356,9 @@ const UserProfile = () => {
                     <button style={TAB_STYLE(activeTab === 'addresses')} onClick={() => setActiveTab('addresses')}>
                         📍 Địa chỉ giao hàng
                         {addresses.length > 0 && (
-                            <span style={{
-                                marginLeft: 6, background: RED, color: '#fff',
-                                borderRadius: 10, padding: '0px 6px', fontSize: 11, fontWeight: 700,
-                            }}>{addresses.length}</span>
+                            <span style={{ marginLeft: 6, background: RED, color: '#fff', borderRadius: 10, padding: '0px 6px', fontSize: 11, fontWeight: 700 }}>
+                                {addresses.length}
+                            </span>
                         )}
                     </button>
                 </div>
@@ -333,59 +366,43 @@ const UserProfile = () => {
                 {/* Tab content */}
                 <div style={{ background: '#fff', borderRadius: '0 0 8px 8px', padding: 24, border: '1px solid #e8e8e8', borderTop: 'none' }}>
 
-                    {/* ── Tab: Thông tin cá nhân ── */}
+                    {/* ── Profile ── */}
                     {activeTab === 'profile' && (
                         <Form layout="vertical" form={profileForm} onFinish={handleUpdateProfile}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                                <Form.Item
-                                    label="Họ và tên"
-                                    name="fullName"
-                                    rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}
-                                >
+                                <Form.Item label="Họ và tên" name="fullName" rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}>
                                     <Input size="large" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
                                 </Form.Item>
                                 <Form.Item label="Số điện thoại" name="phone">
                                     <Input size="large" placeholder="0852..." />
                                 </Form.Item>
                             </div>
-
                             <Form.Item label="Email" name="email">
                                 <Input size="large" disabled />
                             </Form.Item>
-
                             <Form.Item label="Địa chỉ" name="address">
                                 <Input.TextArea rows={2} placeholder="Địa chỉ mặc định..." />
                             </Form.Item>
-
                             <Form.Item style={{ marginBottom: 0 }}>
-                                <Button
-                                    type="primary" htmlType="submit"
-                                    loading={loading} icon={<SaveOutlined />}
-                                    size="large" block
-                                    style={{ background: RED, borderColor: RED, fontWeight: 700 }}
-                                >
+                                <Button type="primary" htmlType="submit" loading={loading} icon={<SaveOutlined />}
+                                    size="large" block style={{ background: RED, borderColor: RED, fontWeight: 700 }}>
                                     Lưu thay đổi
                                 </Button>
                             </Form.Item>
                         </Form>
                     )}
 
-                    {/* ── Tab: Địa chỉ giao hàng ── */}
+                    {/* ── Addresses ── */}
                     {activeTab === 'addresses' && (
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                 <div style={{ color: '#666', fontSize: 13 }}>
-                                    {addresses.length === 0
-                                        ? 'Chưa có địa chỉ nào. Thêm để thanh toán nhanh hơn!'
-                                        : `${addresses.length} địa chỉ đã lưu`
-                                    }
+                                    {addresses.length === 0 ? 'Chưa có địa chỉ nào. Thêm để thanh toán nhanh hơn!' : `${addresses.length} địa chỉ đã lưu`}
                                 </div>
-                                <Button
-                                    type="primary" icon={<PlusOutlined />}
+                                <Button type="primary" icon={<PlusOutlined />}
                                     style={{ background: RED, borderColor: RED, fontWeight: 600 }}
                                     onClick={() => { setEditingAddr(null); setModalOpen(true); }}
-                                    disabled={addresses.length >= 5}
-                                >
+                                    disabled={addresses.length >= 5}>
                                     Thêm địa chỉ
                                 </Button>
                             </div>
@@ -397,9 +414,7 @@ const UserProfile = () => {
                                 </div>
                             ) : (
                                 addresses.map(addr => (
-                                    <AddressCard
-                                        key={addr.id}
-                                        addr={addr}
+                                    <AddressCard key={addr.id} addr={addr}
                                         isDefault={addr.id === defaultAddressId}
                                         onSetDefault={handleSetDefault}
                                         onEdit={handleEdit}
@@ -418,12 +433,18 @@ const UserProfile = () => {
                 </div>
             </div>
 
-            {/* Modal thêm/sửa địa chỉ */}
+            {/* Modal địa chỉ */}
             <AddressModal
                 open={modalOpen}
                 onClose={() => { setModalOpen(false); setEditingAddr(null); }}
                 onSave={handleSaveAddress}
                 editingAddr={editingAddr}
+            />
+
+            {/* Modal đổi mật khẩu — gọi API thật */}
+            <ChangePasswordModal
+                open={pwModalOpen}
+                onClose={() => setPwModalOpen(false)}
             />
         </div>
     );
