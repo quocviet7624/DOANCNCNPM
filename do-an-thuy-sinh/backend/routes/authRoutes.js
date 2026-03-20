@@ -34,9 +34,6 @@ const handleErr = (res, err) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
 };
 
-// ════════════════════════════════════════════
-// AUTH
-// ════════════════════════════════════════════
 
 // POST - Đăng ký
 router.post('/register', async (req, res) => {
@@ -147,9 +144,7 @@ router.put('/change-password', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
-// ════════════════════════════════════════════
-// ADMIN - QUẢN LÝ NGƯỜI DÙNG
-// ════════════════════════════════════════════
+
 
 // GET - Danh sách tất cả users (chỉ admin)
 router.get('/users', async (req, res) => {

@@ -12,6 +12,9 @@ const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
+// URL gốc của frontend – đổi thành domain thật khi deploy
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 // Model text-only (nhanh)
 const TEXT_MODEL   = 'llama-3.1-8b-instant';
 // Model vision (nhận diện ảnh)
@@ -197,8 +200,8 @@ const sendMessageStream = async (req, res) => {
             ...chatHistory,
             { role: 'user', content: text || '' }
           ],
-          max_tokens: 300,
-          temperature: 0.7,
+          max_tokens: 500,
+          temperature: 0.5,
           stream: true
         });
 
@@ -394,36 +397,70 @@ const deleteConversation = async (req, res) => {
 
 // ===================== AI HELPERS =====================
 
-const buildSystemPrompt = async () => {
-  let productList = 'Chưa có dữ liệu sản phẩm.';
-  if (Product) {
-    try {
-      const products = await Product.find()
-        .select('name price description category stock')
-        .limit(60).lean();
+/**
+ * Lấy danh sách sản phẩm thật từ DB, trả về:
+ *  - productList: chuỗi mô tả cho system prompt
+ *  - categories: danh mục duy nhất
+ */
+const fetchProductData = async () => {
+  if (!Product) return { productList: 'Chưa có dữ liệu sản phẩm.', categories: [] };
 
-      if (products.length > 0) {
-        productList = products.map(p => {
-          const price = p.price ? p.price.toLocaleString('vi-VN') + 'đ' : 'Liên hệ';
-          const stock = p.stock !== undefined ? (p.stock > 0 ? 'còn hàng' : 'hết hàng') : 'còn hàng';
-          return `• ${p.name} | ${price} | ${stock}`;
-        }).join('\n');
-      }
-    } catch (e) {
-      console.warn('⚠️  Không lấy được sản phẩm:', e.message);
+  try {
+    const products = await Product.find()
+      .select('_id name price description category stock')
+      .limit(100)
+      .lean();
+
+    if (!products.length) return { productList: 'Chưa có dữ liệu sản phẩm.', categories: [] };
+
+    // Nhóm theo danh mục
+    const byCategory = {};
+    for (const p of products) {
+      const cat = p.category || 'Khác';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push(p);
     }
+
+    const lines = [];
+    for (const [cat, items] of Object.entries(byCategory)) {
+      lines.push(`\n[DANH MỤC: ${cat}]`);
+      for (const p of items) {
+        const price = p.price ? p.price.toLocaleString('vi-VN') + 'đ' : 'Liên hệ';
+        const stock = p.stock !== undefined ? (p.stock > 0 ? 'còn hàng' : 'hết hàng') : 'còn hàng';
+        const link = `${FRONTEND_URL}/product/${p._id}`;
+        lines.push(`• ${p.name} | ${price} | ${stock} | Link: ${link}`);
+      }
+    }
+
+    const categories = Object.keys(byCategory);
+    return { productList: lines.join('\n'), categories };
+  } catch (e) {
+    console.warn('⚠️  Không lấy được sản phẩm:', e.message);
+    return { productList: 'Chưa có dữ liệu sản phẩm.', categories: [] };
   }
+};
+
+const buildSystemPrompt = async () => {
+  const { productList, categories } = await fetchProductData();
+
+  const catList = categories.length ? categories.join(', ') : 'chưa có';
 
   return `Bạn là trợ lý AI của FC Junior - cửa hàng cá cảnh và thuỷ sinh.
-Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 80 từ mỗi tin).
-KHÔNG dùng markdown. Viết văn xuôi tự nhiên.
+Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 120 từ mỗi tin).
+KHÔNG dùng markdown đậm/nghiêng. Viết văn xuôi tự nhiên.
 
-SẢN PHẨM CỬA HÀNG:
+=== QUY TẮC BẮT BUỘC ===
+1. CHỈ được nhắc đến sản phẩm có trong danh sách SPDANH MỤC bên dưới. TUYỆT ĐỐI không bịa tên sản phẩm, giá, hay thông tin không có trong danh sách.
+2. Khi liệt kê hoặc giới thiệu bất kỳ sản phẩm nào, PHẢI kèm đường link của sản phẩm đó (trường "Link:" trong danh sách).
+3. Nếu khách hỏi về loài cá hoặc sản phẩm không có trong danh sách → trả lời thành thật "Hiện cửa hàng chưa có sản phẩm này" và gợi ý liên hệ nhân viên.
+4. Nếu khách hỏi danh mục → chỉ liệt kê các danh mục: ${catList}.
+5. Câu hỏi ngoài chủ đề (không liên quan cá/thuỷ sinh/cửa hàng) → gợi ý liên hệ nhân viên hỗ trợ.
+
+=== SẢN PHẨM CỬA HÀNG ===
 ${productList}
 
 Chuyên môn: cá cảnh, bể cá, thức ăn, lọc nước, cây thuỷ sinh, bệnh cá.
-Khi nhận ảnh: mô tả loài cá/sinh vật trong ảnh và tư vấn chăm sóc nếu có thể.
-Câu hỏi ngoài chủ đề → gợi ý liên hệ nhân viên hỗ trợ.`;
+Khi nhận ảnh: mô tả loài cá/sinh vật trong ảnh và tư vấn chăm sóc nếu có thể. Nếu ảnh trùng khớp với sản phẩm trong cửa hàng, gợi ý kèm link sản phẩm.`;
 };
 
 // Hàm AI chính – hỗ trợ cả text lẫn ảnh
@@ -447,10 +484,7 @@ const getAIResponse = async (text, mediaUrl, mediaType, messageHistory) => {
     if (mediaUrl && mediaType === 'image') {
       console.log('🖼️ Using vision model for image analysis');
 
-      // Nếu là base64 data URL thì dùng trực tiếp, nếu là URL thường thì dùng url
-      const imageContent = mediaUrl.startsWith('data:')
-        ? { type: 'image_url', image_url: { url: mediaUrl } }
-        : { type: 'image_url', image_url: { url: mediaUrl } };
+      const imageContent = { type: 'image_url', image_url: { url: mediaUrl } };
 
       const userContent = [
         imageContent,
@@ -458,7 +492,7 @@ const getAIResponse = async (text, mediaUrl, mediaType, messageHistory) => {
           type: 'text',
           text: text
             ? `${text}`
-            : 'Đây là con cá/sinh vật gì? Hãy nhận diện và tư vấn cách chăm sóc.'
+            : 'Đây là con cá/sinh vật gì? Hãy nhận diện và tư vấn cách chăm sóc. Nếu cửa hàng có bán loài này, hãy gợi ý kèm link sản phẩm.'
         }
       ];
 
@@ -469,8 +503,8 @@ const getAIResponse = async (text, mediaUrl, mediaType, messageHistory) => {
           ...chatHistory,
           { role: 'user', content: userContent }
         ],
-        max_tokens: 400,
-        temperature: 0.7
+        max_tokens: 500,
+        temperature: 0.5
       });
 
       return completion.choices[0]?.message?.content
@@ -485,8 +519,8 @@ const getAIResponse = async (text, mediaUrl, mediaType, messageHistory) => {
         ...chatHistory,
         { role: 'user', content: text || '' }
       ],
-      max_tokens: 300,
-      temperature: 0.7
+      max_tokens: 500,
+      temperature: 0.5
     });
 
     return completion.choices[0]?.message?.content
@@ -494,7 +528,6 @@ const getAIResponse = async (text, mediaUrl, mediaType, messageHistory) => {
 
   } catch (error) {
     console.error('AI Error:', error.message);
-    // Log chi tiết hơn nếu lỗi từ API
     if (error.error) console.error('API Error detail:', error.error);
     return 'Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại!';
   }

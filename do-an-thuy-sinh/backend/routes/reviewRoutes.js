@@ -23,11 +23,6 @@ const handleErr = (res, err) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reviews
-// Lấy tất cả review từ tất cả sản phẩm (admin + staff)
-// Query: ?rating=5  &productId=xxx  &search=text
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
     try {
         verifyAdminOrStaff(req);
@@ -81,9 +76,6 @@ router.get('/', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reviews/stats  — thống kê nhanh
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
     try {
         verifyAdminOrStaff(req);
@@ -105,9 +97,6 @@ router.get('/stats', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/reviews/:productId/:reviewId  — xóa 1 review
-// ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:productId/:reviewId', async (req, res) => {
     try {
         verifyAdminOrStaff(req);

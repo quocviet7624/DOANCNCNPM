@@ -40,7 +40,7 @@ router.post('/:id/reviews', async (req, res) => {
 
         const review = {
             userId,
-            username, // hoặc name tùy model của bạn
+            username, 
             rating: Number(rating),
             comment,
             createdAt: Date.now()

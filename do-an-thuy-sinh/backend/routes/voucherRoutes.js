@@ -3,14 +3,8 @@ const router = express.Router();
 const Voucher = require('../models/Voucher');
 
 const requireAdmin = (req, res, next) => {
-    // Thay bang middleware admin thuc te cua ban
-    // VD: if (!req.user?.isAdmin) return res.status(403).json({ message: 'Forbidden' });
     next();
 };
-
-// =============================================================
-// ADMIN ROUTES
-// =============================================================
 
 // GET /api/vouchers/admin - Lay tat ca voucher (admin)
 router.get('/admin', requireAdmin, async (req, res) => {
@@ -76,10 +70,8 @@ router.delete('/admin/:id', requireAdmin, async (req, res) => {
     }
 });
 
-// =============================================================
-// PUBLIC ROUTES (danh cho khach hang)
-// =============================================================
 
+// PUBLIC ROUTES (danh cho khach hang)
 // GET /api/vouchers/public - Hien thi voucher cho khach xem (an code neu chua den gio mo)
 router.get('/public', async (req, res) => {
     try {
@@ -109,10 +101,6 @@ router.get('/public', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-
-// =============================================================
-// USER ROUTES
-// =============================================================
 
 // POST /api/vouchers/apply - Kiem tra & ap dung voucher
 router.post('/apply', async (req, res) => {

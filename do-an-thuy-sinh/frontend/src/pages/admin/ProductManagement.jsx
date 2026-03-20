@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Popconfirm, Upload, Image, Space } from 'antd';
-// FIX: bỏ Tabs và TabPane không dùng
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined, LinkOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 

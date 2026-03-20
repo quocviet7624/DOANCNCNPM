@@ -14,9 +14,9 @@ const {
 } = require('../controllers/Conversation');
 
 // ===== USER ROUTES =====
-router.post('/send', sendMessage);                        // Gửi tin nhắn (bình thường)
-router.post('/send-stream', sendMessageStream);           // Gửi tin nhắn (streaming ✨)
-router.get('/user/:userEmail', getUserConversation);      // Lấy lịch sử
+router.post('/send', sendMessage);                        
+router.post('/send-stream', sendMessageStream);         
+router.get('/user/:userEmail', getUserConversation);      
 
 // ===== ADMIN ROUTES =====
 router.get('/admin/all', getAllConversations);

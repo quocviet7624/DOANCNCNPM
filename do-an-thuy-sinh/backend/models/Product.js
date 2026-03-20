@@ -6,10 +6,8 @@ const productSchema = new mongoose.Schema({
     price: { type: Number, required: true, min: 0 },
     description: { type: String, default: '' },
 
-    // ✅ ẢNH ĐƠN (tương thích code cũ - luôn là ảnh đầu tiên)
     image: { type: String, default: 'https://via.placeholder.com/300' },
 
-    // ✅ MẢNG NHIỀU ẢNH (MỚI THÊM)
     images: { type: [String], default: [] },
 
     stock: { type: Number, default: 100 },

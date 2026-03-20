@@ -16,7 +16,7 @@ const wishlistSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Mỗi user chỉ yêu thích mỗi sản phẩm 1 lần
+
 wishlistSchema.index({ userId: 1, productId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Wishlist', wishlistSchema);

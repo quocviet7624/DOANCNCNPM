@@ -18,22 +18,22 @@ const voucherSchema = new mongoose.Schema({
         min: 1,
         max: 100,
     },
-    // Áp dụng cho danh mục nào. Nếu rỗng = áp dụng tất cả
+
     applicableCategories: {
         type: [String],
-        default: [], // [] = all categories
+        default: [], 
     },
     minOrderValue: {
         type: Number,
-        default: 0, // Giá trị đơn hàng tối thiểu để dùng voucher
+        default: 0, 
     },
     maxDiscount: {
         type: Number,
-        default: null, // Giới hạn số tiền giảm tối đa (null = không giới hạn)
+        default: null, 
     },
     usageLimit: {
         type: Number,
-        default: null, // null = không giới hạn lượt dùng
+        default: null, 
     },
     usedCount: {
         type: Number,
