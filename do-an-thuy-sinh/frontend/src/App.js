@@ -29,7 +29,8 @@ import BannerManagement from './pages/admin/BannerManagement';
 import CategoryManagement from './pages/admin/CategoryManagement';
 import ChatManagement from './pages/admin/ChatManagement';
 import AdminVouchers from './pages/admin/AdminVouchers';
-import AdminReviews from './pages/admin/AdminReviews'; // ← MỚI
+import AdminReviews from './pages/admin/AdminReviews';
+import ForgotPassword from './pages/ForgotPassword'; // ← MỚI
 
 // ── Layout khách hàng ──
 const MainLayout = () => {
@@ -88,6 +89,7 @@ function App() {
                     <Route path="/my-orders"   element={<MyOrders />} />
                     <Route path="/settings"    element={<AccountSettings />} />
                     <Route path="/wishlist"    element={<WishlistPage />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
                 </Route>
 
                 {/* ── TRANG RIÊNG BIỆT ── */}

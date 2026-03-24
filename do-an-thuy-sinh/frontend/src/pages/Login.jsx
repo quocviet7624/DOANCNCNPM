@@ -17,7 +17,6 @@ const Login = () => {
       try {
         const user = JSON.parse(userStr);
         console.log('🔍 Đã đăng nhập sẵn, role:', user.role);
-        // admin và staff đều vào /admin
         if (['admin', 'staff'].includes(user.role)) {
           navigate('/admin', { replace: true });
         } else {
@@ -51,14 +50,9 @@ const Login = () => {
       window.dispatchEvent(new Event('userChanged'));
       message.success({ content: `Chào mừng ${user.fullName || user.username}!`, duration: 2 });
 
-      console.log('🔄 Chuẩn bị redirect, role:', user.role);
-
-      // admin và staff đều vào /admin
       if (['admin', 'staff'].includes(user.role)) {
-        console.log('➡️ Redirect đến /admin');
         setTimeout(() => { window.location.href = '/admin'; }, 500);
       } else {
-        console.log('➡️ Redirect đến /');
         setTimeout(() => { window.location.href = '/'; }, 500);
       }
 
@@ -108,10 +102,21 @@ const Login = () => {
             <Form.Item name="remember" valuePropName="checked" noStyle>
               <Checkbox>Ghi nhớ đăng nhập</Checkbox>
             </Form.Item>
+            
+            {/* ĐÃ CẬP NHẬT TẠI ĐÂY */}
             <button
               type="button"
-              style={{ float: 'right', color: '#004d40', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 14 }}
-              onClick={() => message.info('Tính năng đang phát triển!')}
+              style={{ 
+                float: 'right', 
+                color: '#004d40', 
+                background: 'none', 
+                border: 'none', 
+                cursor: 'pointer', 
+                padding: 0, 
+                fontSize: 14,
+                fontWeight: '500'
+              }}
+              onClick={() => navigate('/forgot-password')}
             >
               Quên mật khẩu?
             </button>

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { forgotPassword, verifyOTP, resetPassword } = require('../controllers/authController'); // ← Thêm dòng này
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fc-junior-aquarium-super-secret-key-2024';
 
@@ -13,7 +14,6 @@ const verifyAdmin = (req) => {
     return decoded;
 };
 
-// Helper: admin HOẶC staff đều vào được (dùng cho các route không phải quản lý user)
 const verifyAdminOrStaff = (req) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) throw { status: 401, message: 'Chưa đăng nhập!' };
@@ -144,12 +144,21 @@ router.put('/change-password', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
+// ── Quên mật khẩu ─────────────────────────────────────────────────
+// POST - Gửi OTP về email
+router.post('/forgot-password', forgotPassword);
 
+// POST - Xác minh OTP
+router.post('/verify-otp', verifyOTP);
+
+// POST - Đặt lại mật khẩu mới
+router.post('/reset-password', resetPassword);
+// ──────────────────────────────────────────────────────────────────
 
 // GET - Danh sách tất cả users (chỉ admin)
 router.get('/users', async (req, res) => {
     try {
-        verifyAdmin(req);  // staff không vào được
+        verifyAdmin(req);
         const users = await User.find().select('-password').sort({ createdAt: -1 });
         res.json(users);
     } catch (err) { handleErr(res, err); }
@@ -182,7 +191,6 @@ router.put('/users/:id/change-role', async (req, res) => {
             return res.status(400).json({ message: `Vai trò không hợp lệ! Phải là: ${VALID_ROLES.join(', ')}` });
         }
 
-        // Không cho tự đổi role của chính mình
         if (decoded.id === req.params.id) {
             return res.status(403).json({ message: 'Không thể đổi vai trò của chính mình!' });
         }
@@ -205,7 +213,6 @@ router.delete('/users/:id', async (req, res) => {
     try {
         const decoded = verifyAdmin(req);
 
-        // Không cho tự xóa chính mình
         if (decoded.id === req.params.id) {
             return res.status(403).json({ message: 'Không thể xóa tài khoản của chính mình!' });
         }
