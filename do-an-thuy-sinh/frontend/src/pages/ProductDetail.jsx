@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
     Row, Col, Button, InputNumber,
-    Rate, message, Spin, Avatar, Input, Form, List, Empty 
+    Rate, message, Spin, Avatar, Input, Form, List, Empty, Modal
 } from 'antd';
 import { 
     ShoppingCartOutlined, LeftOutlined, UserOutlined, StarFilled,
@@ -181,6 +181,7 @@ const ProductDetail = () => {
     const [hasOrdered, setHasOrdered]         = useState(false);
     const [hasReviewed, setHasReviewed]       = useState(false);
     const [submitting, setSubmitting]         = useState(false);
+    const [lightboxOpen, setLightboxOpen]     = useState(false); // ← THÊM MỚI
 
     const getUserIdFromStorage = () => {
         const storedUserId = localStorage.getItem('userId');
@@ -285,18 +286,45 @@ const ProductDetail = () => {
                                 const current = imgs[activeImage] || imgs[0];
                                 return (
                                     <div>
-                                        <div style={{ border: '1px solid #eee', borderRadius: 4, overflow: 'hidden', textAlign: 'center', background: '#fff', position: 'relative', marginBottom: 8 }}>
-                                            <img alt={product.name} src={current} style={{ width: '100%', height: 340, objectFit: 'contain', padding: 8, display: 'block' }} />
+                                        {/* ── Ảnh chính: click để mở Modal ── */}
+                                        <div
+                                            onClick={() => setLightboxOpen(true)}
+                                            style={{
+                                                border: '1px solid #eee', borderRadius: 4,
+                                                overflow: 'hidden', textAlign: 'center',
+                                                background: '#fff', position: 'relative',
+                                                marginBottom: 8, cursor: 'zoom-in',
+                                            }}
+                                        >
+                                            <img
+                                                alt={product.name}
+                                                src={current}
+                                                style={{ width: '100%', height: 340, objectFit: 'contain', padding: 8, display: 'block' }}
+                                            />
+
+                                            {/* Badge gợi ý phóng to */}
+                                            <div style={{
+                                                position: 'absolute', top: 10, right: 10,
+                                                background: 'rgba(0,0,0,0.5)', color: '#fff',
+                                                fontSize: 11, padding: '3px 10px', borderRadius: 10,
+                                            }}>
+                                                🔍 Click để phóng to
+                                            </div>
+
                                             {imgs.length > 1 && (
                                                 <>
-                                                    <button onClick={() => setActiveImage(i => (i - 1 + imgs.length) % imgs.length)}
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setActiveImage(i => (i - 1 + imgs.length) % imgs.length); }}
                                                         style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.35)', border: 'none', color: '#fff', width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>‹</button>
-                                                    <button onClick={() => setActiveImage(i => (i + 1) % imgs.length)}
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setActiveImage(i => (i + 1) % imgs.length); }}
                                                         style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.35)', border: 'none', color: '#fff', width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>›</button>
                                                     <div style={{ position: 'absolute', bottom: 10, right: 12, background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 10 }}>{activeImage + 1} / {imgs.length}</div>
                                                 </>
                                             )}
                                         </div>
+
+                                        {/* Thumbnail */}
                                         {imgs.length > 1 && (
                                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                 {imgs.map((src, i) => (
@@ -307,6 +335,95 @@ const ProductDetail = () => {
                                                 ))}
                                             </div>
                                         )}
+
+                                        {/* ── Modal xem ảnh to ── */}
+                                        <Modal
+                                            open={lightboxOpen}
+                                            onCancel={() => setLightboxOpen(false)}
+                                            footer={null}
+                                            centered
+                                            // Tăng chiều rộng Modal lên 80% chiều rộng màn hình (viewport width)
+                                            width="80vw" 
+                                            // Giới hạn tối đa để trên màn hình máy tính lớn không bị quá thô
+                                            style={{ maxWidth: '1000px', top: 20 }} 
+                                            styles={{ 
+                                                body: { 
+                                                    padding: '12px', 
+                                                    background: '#fff', 
+                                                    borderRadius: 8, 
+                                                    overflow: 'hidden',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                } 
+                                            }}
+                                            closeIcon={
+                                                <span style={{
+                                                    position: 'absolute', top: 10, right: 10, zIndex: 10,
+                                                    background: 'rgba(255,255,255,0.9)', borderRadius: '50%', width: 32, height: 32,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)', fontSize: 16,
+                                                    cursor: 'pointer', fontWeight: 'bold', color: '#333',
+                                                }}>✕</span>
+                                            }
+                                        >
+                                            <div style={{ position: 'relative', width: '100%', textAlign: 'center', lineHeight: 0 }}>
+                                                <img
+                                                    src={current}
+                                                    alt={product.name}
+                                                    style={{
+                                                        width: '100%',         // Ép ảnh rộng hết cỡ Modal
+                                                        maxHeight: '80vh',    // Không cho phép ảnh cao quá 80% màn hình để tránh cuộn trang
+                                                        objectFit: 'contain', // Giữ nguyên tỉ lệ ảnh cá, không bị móp méo
+                                                        display: 'inline-block', 
+                                                        borderRadius: 4,
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                    }}
+                                                />
+
+                                                {/* Nút prev/next trong Modal - Chỉnh lại vị trí để dễ bấm hơn */}
+                                                {imgs.length > 1 && (
+                                                    <>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setActiveImage(i => (i - 1 + imgs.length) % imgs.length); }}
+                                                            style={{
+                                                                position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+                                                                background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff',
+                                                                width: 45, height: 45, borderRadius: '0 4px 4px 0', cursor: 'pointer',
+                                                                fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                transition: 'background 0.3s'
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.6)'}
+                                                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.3)'}
+                                                        >‹</button>
+                                                        
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setActiveImage(i => (i + 1) % imgs.length); }}
+                                                            style={{
+                                                                position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+                                                                background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff',
+                                                                width: 45, height: 45, borderRadius: '4px 0 0 4px', cursor: 'pointer',
+                                                                fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                transition: 'background 0.3s'
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.6)'}
+                                                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.3)'}
+                                                        >›</button>
+
+                                                        <div style={{
+                                                            position: 'absolute', bottom: 15, left: '50%', transform: 'translateX(-50%)',
+                                                            background: 'rgba(0,0,0,0.6)', color: '#fff',
+                                                            fontSize: 13, padding: '4px 15px', borderRadius: '20px',
+                                                            backdropFilter: 'blur(4px)'
+                                                        }}>
+                                                            {activeImage + 1} / {imgs.length}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </Modal>
+                                        {/* ───────────────────── */}
                                     </div>
                                 );
                             })()}
