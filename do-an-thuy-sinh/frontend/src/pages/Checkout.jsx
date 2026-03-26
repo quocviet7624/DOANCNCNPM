@@ -58,6 +58,9 @@ const Checkout = () => {
     const [paypalStep, setPaypalStep]           = useState('form');
     const [paypalForm]                          = Form.useForm();
 
+    // VNPay ── THÊM MỚI
+    const [vnpayLoading, setVnpayLoading] = useState(false);
+
     // Voucher
     const [voucherCode, setVoucherCode]       = useState('');
     const [voucherLoading, setVoucherLoading] = useState(false);
@@ -76,10 +79,8 @@ const Checkout = () => {
         const user = JSON.parse(userStr);
         setUserInfo(user);
 
-        // ── THAY ĐỔI 1: đọc địa chỉ từ key chung (đồng bộ với UserProfile) ──
         const { list, defaultId } = loadAddresses();
 
-        // Nếu chưa có địa chỉ nào → thử migrate từ user.address cũ
         if (list.length === 0 && user.address) {
             const migrated = [{
                 id:        Date.now().toString(),
@@ -104,11 +105,9 @@ const Checkout = () => {
         if (savedVoucher) { try { setAppliedVoucher(JSON.parse(savedVoucher)); } catch {} }
     }, [navigate]);
 
-    // Khi chọn địa chỉ khác → cập nhật tỉnh
     useEffect(() => {
         if (!selectedAddressId) return;
         const addr = savedAddresses.find(a => a.id === selectedAddressId);
-        // ── THAY ĐỔI 2: field tỉnh/thành trong schema mới là "city" ──
         setSelectedProvince(addr?.city || '');
     }, [selectedAddressId, savedAddresses]);
 
@@ -119,7 +118,7 @@ const Checkout = () => {
     const shippingFee    = shippingInfo.fee;
     const finalTotal     = subtotal - discountAmount + shippingFee;
 
-    // ── Address helpers (THAY ĐỔI 3: ghi vào key chung) ─────────────────────
+    // ── Address helpers ───────────────────────────────────────────
     const persistAddresses = (newList, defaultId) => {
         saveAddresses(newList, defaultId);
         setSavedAddresses(newList);
@@ -213,8 +212,8 @@ const Checkout = () => {
         localStorage.removeItem('appliedVoucher');
     };
 
-    // Tạo đơn hàng
-    const submitOrder = async () => {
+    // Tạo đơn hàng (COD / PayPal)
+    const submitOrder = async (extraData = {}) => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
         if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
 
@@ -226,7 +225,7 @@ const Checkout = () => {
             userId:         userInfo._id || userInfo.id,
             customerName:   addr.name,
             phone:          addr.phone,
-            address:        addr.detail,       // field mới là "detail"
+            address:        addr.detail,
             province:       selectedProvince,
             items:          cartItems,
             subtotalAmount: subtotal,
@@ -237,6 +236,7 @@ const Checkout = () => {
             paymentMethod:  isPaid ? 'PayPal' : 'COD',
             isPaid,
             status:         'Chờ xác nhận',
+            ...extraData,
         };
 
         try {
@@ -285,13 +285,65 @@ const Checkout = () => {
         }
     };
 
+    // ── THÊM MỚI: Xử lý thanh toán VNPay ─────────────────────────
+    const handleVNPayPayment = async () => {
+        if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
+        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+
+        setVnpayLoading(true);
+        try {
+            const addr    = savedAddresses.find(a => a.id === selectedAddressId);
+            const orderId = 'FCJR' + Date.now().toString().slice(-8);
+
+            // Lưu thông tin đơn hàng tạm để dùng sau khi VNPay redirect về
+            const pendingOrder = {
+                userId:         userInfo._id || userInfo.id,
+                customerName:   addr.name,
+                phone:          addr.phone,
+                address:        addr.detail,
+                province:       selectedProvince,
+                items:          cartItems,
+                subtotalAmount: subtotal,
+                discountAmount,
+                shippingFee,
+                totalAmount:    finalTotal,
+                voucherCode:    appliedVoucher?.code || null,
+                paymentMethod:  'VNPay',
+                isPaid:         false,
+                status:         'Chờ xác nhận',
+                vnpayOrderId:   orderId,
+            };
+            localStorage.setItem('pendingVNPayOrder', JSON.stringify(pendingOrder));
+
+            // Gọi backend tạo URL thanh toán VNPay
+            const res = await axios.post('http://localhost:5000/api/vnpay/create-payment', {
+                amount:    finalTotal,
+                orderInfo: `Thanh toan don hang FC Junior`,
+                orderId:   orderId,
+            });
+
+            // Redirect sang trang VNPay
+            window.location.href = res.data.paymentUrl;
+
+        } catch (err) {
+            console.error('VNPay error:', err);
+            message.error('Không thể kết nối VNPay. Vui lòng thử lại!');
+        } finally {
+            setVnpayLoading(false);
+        }
+    };
+    // ──────────────────────────────────────────────────────────────
+
     const handlePlaceOrder = () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
         if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+
         if (paymentMethod === 'paypal') {
             setPaypalStep('form');
             paypalForm.resetFields();
             setPaypalModalOpen(true);
+        } else if (paymentMethod === 'vnpay') {  // ── THÊM MỚI
+            handleVNPayPayment();
         } else {
             submitOrder();
         }
@@ -328,6 +380,19 @@ const Checkout = () => {
                 </span>
             </span>
         );
+    };
+
+    // ── Màu nút thanh toán theo phương thức ───────────────────────
+    const getButtonStyle = () => {
+        if (paymentMethod === 'paypal')  return { background: '#003087', borderColor: '#003087' };
+        if (paymentMethod === 'vnpay')   return { background: '#e30019', borderColor: '#e30019' };
+        return { background: RED, borderColor: RED };
+    };
+
+    const getButtonText = () => {
+        if (paymentMethod === 'paypal') return 'Pay with PayPal';
+        if (paymentMethod === 'vnpay')  return 'Thanh toán qua VNPay';
+        return 'ĐẶT HÀNG NGAY';
     };
 
     return (
@@ -376,7 +441,6 @@ const Checkout = () => {
                                                                     <Tag color="blue">Mặc định</Tag>
                                                                 )}
                                                             </Space>
-                                                            {/* field mới là "detail" thay vì "address" */}
                                                             <div style={{ marginTop: 4, color: '#555' }}>{item.detail}</div>
                                                             {item.city && (
                                                                 <div style={{ marginTop: 2, fontSize: 12, color: '#888' }}>
@@ -458,7 +522,6 @@ const Checkout = () => {
                                 </div>
                             )}
 
-                            {/* Chọn tỉnh/thành nhanh nếu địa chỉ chưa có tỉnh */}
                             {!isAddingNew && selectedAddressId && !selectedProvince && (
                                 <div style={{
                                     marginTop: 12, padding: '12px 16px',
@@ -486,6 +549,8 @@ const Checkout = () => {
                         <Card title={<span><CreditCardOutlined /> Phương thức thanh toán</span>} style={{ marginBottom: 20 }}>
                             <Radio.Group onChange={e => setPaymentMethod(e.target.value)} value={paymentMethod} style={{ width: '100%' }}>
                                 <Space direction="vertical" style={{ width: '100%' }}>
+
+                                    {/* COD */}
                                     <Radio value="cod" style={{ width: '100%', padding: 15, border: '1px solid #d9d9d9', borderRadius: 4 }}>
                                         <Space>
                                             <img src="https://cdn-icons-png.flaticon.com/512/2331/2331941.png" alt="cod" width={24} />
@@ -496,6 +561,8 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
+
+                                    {/* PayPal */}
                                     <Radio value="paypal" style={{ width: '100%', padding: 15, border: '1px solid #d9d9d9', borderRadius: 4 }}>
                                         <Space>
                                             <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" alt="paypal" width={60} />
@@ -506,6 +573,19 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
+
+                                    {/* VNPay ── THÊM MỚI */}
+                                    <Radio value="vnpay" style={{ width: '100%', padding: 15, border: paymentMethod === 'vnpay' ? '2px solid #e30019' : '1px solid #d9d9d9', borderRadius: 4, background: paymentMethod === 'vnpay' ? '#fff5f5' : 'white', transition: 'all 0.3s' }}>
+                                        <Space>
+                                            <img src="https://cdn.haitrieu.com/wp-content/uploads/2022/10/Icon-VNPAY-QR.png" alt="vnpay" width={40} style={{ objectFit: 'contain' }} />
+                                            <div>
+                                                <Text strong>Thanh toán qua VNPay</Text>
+                                                <div style={{ fontSize: 12, color: '#888' }}>ATM, Visa, MasterCard, QR Code, Ví điện tử</div>
+                                                <Tag color="red" style={{ marginTop: 4, fontSize: 11 }}>Thanh toán online an toàn</Tag>
+                                            </div>
+                                        </Space>
+                                    </Radio>
+
                                 </Space>
                             </Radio.Group>
                         </Card>
@@ -620,14 +700,23 @@ const Checkout = () => {
                                     </Title>
                                 </div>
 
+                                {/* Tag trạng thái thanh toán */}
                                 <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                                    <Tag
-                                        color={paymentMethod === 'paypal' ? 'success' : 'warning'}
-                                        icon={paymentMethod === 'paypal' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                                        style={{ fontSize: 12 }}
-                                    >
-                                        {paymentMethod === 'paypal' ? 'Đã thanh toán (PayPal)' : 'Chưa thanh toán (COD)'}
-                                    </Tag>
+                                    {paymentMethod === 'paypal' && (
+                                        <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 12 }}>
+                                            Đã thanh toán (PayPal)
+                                        </Tag>
+                                    )}
+                                    {paymentMethod === 'vnpay' && (
+                                        <Tag color="red" icon={<CheckCircleOutlined />} style={{ fontSize: 12 }}>
+                                            Thanh toán online (VNPay)
+                                        </Tag>
+                                    )}
+                                    {paymentMethod === 'cod' && (
+                                        <Tag color="warning" icon={<CloseCircleOutlined />} style={{ fontSize: 12 }}>
+                                            Chưa thanh toán (COD)
+                                        </Tag>
+                                    )}
                                 </div>
 
                                 {(discountAmount > 0 || shippingInfo.isFree) && (
@@ -639,17 +728,16 @@ const Checkout = () => {
 
                             <Button
                                 type="primary" block size="large"
-                                loading={isProcessing}
+                                loading={isProcessing || vnpayLoading}
                                 onClick={handlePlaceOrder}
                                 disabled={isAddingNew || savedAddresses.length === 0 || !selectedProvince}
                                 style={{
                                     height: 50,
-                                    background: paymentMethod === 'paypal' ? '#003087' : RED,
-                                    borderColor: paymentMethod === 'paypal' ? '#003087' : RED,
                                     fontWeight: 700, fontSize: 15, marginTop: 8,
+                                    ...getButtonStyle(),
                                 }}
                             >
-                                {paymentMethod === 'paypal' ? 'Pay with PayPal' : 'ĐẶT HÀNG NGAY'}
+                                {getButtonText()}
                             </Button>
 
                             <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
