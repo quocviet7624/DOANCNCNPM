@@ -71,6 +71,7 @@ const conversationRoutes = require('./routes/conversationRoutes');
 const voucherRoutes      = require('./routes/voucherRoutes');
 const wishlistRoutes     = require('./routes/wishlist.route');
 const reviewRoutes       = require('./routes/reviewRoutes'); 
+const vnpayRoutes        = require('./routes/vnpayRoutes');
 
 // ========== SỬ DỤNG ROUTES ==========
 app.use('/api/products',      productRoutes);
@@ -82,6 +83,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/vouchers',      voucherRoutes);
 app.use('/api/wishlist',      wishlistRoutes);
 app.use('/api/reviews',       reviewRoutes); 
+app.use('/api/vnpay',         vnpayRoutes);
 
 // ========== ROUTE CHẠY THỬ ==========
 app.get('/', (req, res) => {

@@ -30,7 +30,8 @@ import CategoryManagement from './pages/admin/CategoryManagement';
 import ChatManagement from './pages/admin/ChatManagement';
 import AdminVouchers from './pages/admin/AdminVouchers';
 import AdminReviews from './pages/admin/AdminReviews';
-import ForgotPassword from './pages/ForgotPassword'; // ← MỚI
+import ForgotPassword from './pages/ForgotPassword'; 
+import VNPayReturn from './pages/VNPayReturn';// ← MỚI
 
 // ── Layout khách hàng ──
 const MainLayout = () => {
@@ -90,6 +91,8 @@ function App() {
                     <Route path="/settings"    element={<AccountSettings />} />
                     <Route path="/wishlist"    element={<WishlistPage />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/vnpay-return" element={<VNPayReturn />} />
+                    
                 </Route>
 
                 {/* ── TRANG RIÊNG BIỆT ── */}
