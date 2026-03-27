@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Button, InputNumber, message, Empty, Input, Tag, Select } from 'antd';
+import { Card, Table, Button, InputNumber, message, Empty, Input, Tag } from 'antd';
 import {
     DeleteOutlined, ArrowRightOutlined, HistoryOutlined,
     TagOutlined, GiftOutlined, CheckCircleOutlined,
-    CloseCircleOutlined, CarOutlined
+    CloseCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import {
-    calcShippingFee, PROVINCE_LIST,
-    FREE_SHIP_THRESHOLD, SHIPPING_ZONES
-} from '../utils/shippingFee';
 
 const RED   = '#c8232c';
 const GREEN = '#52c41a';
@@ -20,12 +16,9 @@ const Cart = ({ onCartUpdate }) => {
     const navigate = useNavigate();
 
     // ── Voucher ──
-    const [voucherCode, setVoucherCode]         = useState('');
-    const [voucherLoading, setVoucherLoading]   = useState(false);
-    const [appliedVoucher, setAppliedVoucher]   = useState(null);
-
-    // ── Shipping preview ──
-    const [previewProvince, setPreviewProvince] = useState('');
+    const [voucherCode, setVoucherCode]       = useState('');
+    const [voucherLoading, setVoucherLoading] = useState(false);
+    const [appliedVoucher, setAppliedVoucher] = useState(null);
 
     const loadCart = useCallback(() => {
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
@@ -62,9 +55,6 @@ const Cart = ({ onCartUpdate }) => {
     // ── Tính tiền ──
     const subtotal       = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const discountAmount = appliedVoucher?.discountAmount || 0;
-    const shippingInfo   = calcShippingFee(previewProvince, subtotal);
-    const shippingFee    = shippingInfo.fee;
-    const finalTotal     = subtotal - discountAmount + shippingFee;
 
     // ── Voucher ──
     const handleApplyVoucher = async () => {
@@ -96,9 +86,9 @@ const Cart = ({ onCartUpdate }) => {
 
     const handleCheckout = () => {
         localStorage.setItem('checkoutSummary', JSON.stringify({
-            subtotal, discountAmount, shippingFee, finalTotal,
+            subtotal,
+            discountAmount,
             voucherCode: appliedVoucher?.code || null,
-            province: previewProvince,
         }));
         navigate('/checkout');
     };
@@ -220,73 +210,18 @@ const Cart = ({ onCartUpdate }) => {
                                     </div>
                                 )}
 
-                                {/* ── Phí ship preview ── */}
-                                <div style={{ borderTop: '1px dashed #eee', margin: '10px 0 12px', paddingTop: 12 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <CarOutlined /> Dự tính phí ship:
-                                    </div>
-                                    <Select
-                                        showSearch
-                                        style={{ width: '100%', marginBottom: 8 }}
-                                        placeholder="Chọn tỉnh/thành phố..."
-                                        value={previewProvince || undefined}
-                                        onChange={val => setPreviewProvince(val)}
-                                        options={PROVINCE_LIST.map(p => ({ value: p, label: p }))}
-                                        filterOption={(input, option) =>
-                                            option.label.toLowerCase().includes(input.toLowerCase())
-                                        }
-                                        size="small"
-                                    />
-
-                                    {previewProvince ? (
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, alignItems: 'center' }}>
-                                            <span style={{ color: '#555' }}>Phí giao hàng:</span>
-                                            {shippingInfo.isFree ? (
-                                                <Tag color="success" icon={<CheckCircleOutlined />}>MIỄN PHÍ 🎉</Tag>
-                                            ) : (
-                                                <span style={{ fontWeight: 700, color: RED }}>
-                                                    {shippingFee.toLocaleString('vi-VN')}đ
-                                                    <span style={{ fontSize: 11, color: '#999', fontWeight: 400, marginLeft: 4 }}>
-                                                        ({shippingInfo.zoneLabel})
-                                                    </span>
-                                                </span>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div style={{ fontSize: 12, color: '#aaa' }}>Chọn tỉnh/thành để xem phí ship</div>
-                                    )}
-
-                                    {/* Gợi ý miễn ship */}
-                                    {previewProvince && !shippingInfo.isFree && (
-                                        <div style={{ marginTop: 8, fontSize: 12, color: '#d48806', background: '#fffbe6', borderRadius: 6, padding: '5px 10px', border: '1px solid #ffe58f' }}>
-                                            🛒 Mua thêm <b>{(FREE_SHIP_THRESHOLD - subtotal).toLocaleString('vi-VN')}đ</b> để miễn phí ship!
-                                        </div>
-                                    )}
-
-                                    {/* Bảng phí tham khảo */}
-                                    <div style={{ marginTop: 10, padding: '8px 10px', background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0' }}>
-                                        {Object.entries(SHIPPING_ZONES).map(([zone, info]) => (
-                                            <div key={zone} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#999', marginBottom: 3 }}>
-                                                <span>📍 {info.label}</span>
-                                                <span style={{ fontWeight: 600 }}>{info.fee.toLocaleString('vi-VN')}đ</span>
-                                            </div>
-                                        ))}
-                                        <div style={{ fontSize: 11, color: GREEN, marginTop: 4, borderTop: '1px dashed #eee', paddingTop: 4 }}>
-                                            ✅ Miễn ship đơn từ {FREE_SHIP_THRESHOLD.toLocaleString('vi-VN')}đ
-                                        </div>
-                                    </div>
-                                </div>
-
                                 <div style={{ borderTop: '1px dashed #eee', margin: '4px 0 10px' }} />
 
-                                {/* Tổng cuối */}
+                                {/* Tổng cuối (chưa tính ship) */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: 700, fontSize: 15 }}>Tổng cộng:</span>
+                                    <span style={{ fontWeight: 700, fontSize: 15 }}>Tạm tính:</span>
                                     <span style={{ fontWeight: 700, fontSize: 20, color: RED }}>
-                                        {finalTotal.toLocaleString('vi-VN')}đ
+                                        {(subtotal - discountAmount).toLocaleString('vi-VN')}đ
                                     </span>
                                 </div>
-                                {previewProvince && <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', marginTop: 2 }}>(đã bao gồm phí ship)</div>}
+                                <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', marginTop: 2 }}>
+                                    (Phí ship sẽ được tính ở bước thanh toán)
+                                </div>
 
                                 {discountAmount > 0 && (
                                     <div style={{ marginTop: 6, textAlign: 'right', fontSize: 12, color: GREEN }}>

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
     Row, Col, Card, Radio, Button, Input, Form,
     Divider, List, Typography, Space, message, Tag,
-    Modal, Popconfirm, Tooltip, Select
+    Modal, Popconfirm, Tooltip, Select, Spin,
 } from 'antd';
 import {
     EnvironmentOutlined, CreditCardOutlined,
@@ -13,17 +13,13 @@ import {
     CloseCircleOutlined, CarOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import {
-    calcShippingFee, PROVINCE_LIST,
-    FREE_SHIP_THRESHOLD, SHIPPING_ZONES
-} from '../utils/shippingFee';
 
 const { Title, Text } = Typography;
 const RED   = '#c8232c';
 const GREEN = '#52c41a';
 const BLUE  = '#1890ff';
 
-const API_SHIPPING = 'http://localhost:5000/api/shipping';
+const SHIPPING_API = 'http://localhost:5000/api/shipping/config';
 
 // ─── Helper: đọc/ghi địa chỉ dùng chung với UserProfile ─────────────────────
 const loadAddresses = () => {
@@ -38,6 +34,25 @@ const saveAddresses = (list, defaultId) => {
     localStorage.setItem('addresses', JSON.stringify(list));
     if (defaultId !== undefined && defaultId !== null)
         localStorage.setItem('defaultAddressId', defaultId);
+};
+
+// ─── Tính phí ship từ config do admin cài đặt ────────────────────────────────
+const calcShippingFee = (province, subtotal, shippingConfig) => {
+    if (!shippingConfig || !province) return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
+
+    const { freeShipThreshold, zones, provinceZoneMap } = shippingConfig;
+
+    if (subtotal >= freeShipThreshold) {
+        const zoneId   = provinceZoneMap[province];
+        const zoneInfo = zones[zoneId];
+        return { fee: 0, isFree: true, zoneLabel: zoneInfo?.label || '', originalFee: zoneInfo?.fee || 0 };
+    }
+
+    const zoneId   = provinceZoneMap[province];
+    const zoneInfo = zones[zoneId];
+    if (!zoneInfo) return { fee: 0, isFree: false, zoneLabel: 'Không xác định', originalFee: 0 };
+
+    return { fee: zoneInfo.fee, isFree: false, zoneLabel: zoneInfo.label, originalFee: zoneInfo.fee };
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -71,34 +86,43 @@ const Checkout = () => {
     // Shipping
     const [selectedProvince, setSelectedProvince] = useState('');
 
-    // ── SHIPPING CONFIG ĐỘNG ────────────────────────────────────────────────
-    const [shippingConfig, setShippingConfig] = useState(() => {
-        try {
-            const cached = localStorage.getItem('shippingConfig');
-            return cached ? JSON.parse(cached) : null;
-        } catch { return null; }
-    });
+    // ── Shipping config từ API ───────────────────────────────────────────────
+    const [shippingConfig, setShippingConfig]       = useState(null);
+    const [shippingConfigLoading, setShippingConfigLoading] = useState(true);
 
-    const fetchShippingConfig = useCallback(async () => {
-        try {
-            const res = await axios.get(`${API_SHIPPING}/config`);
-            if (res.data.success) {
-                const cfg = res.data.data;
-                setShippingConfig(cfg);
-                localStorage.setItem('shippingConfig', JSON.stringify(cfg));
-            }
-        } catch (err) {
-            console.warn('Không lấy được config ship từ server, dùng cache localStorage.', err);
-        }
-    }, []);
-
-    useEffect(() => { fetchShippingConfig(); }, [fetchShippingConfig]);
-
+    // ── Load shipping config từ server (admin quản lý) ──────────────────────
     useEffect(() => {
-        const onConfigChange = () => fetchShippingConfig();
+        const fetchShippingConfig = async () => {
+            setShippingConfigLoading(true);
+            try {
+                // Ưu tiên dùng cache localStorage nếu có, để tránh chờ quá lâu
+                const cached = localStorage.getItem('shippingConfig');
+                if (cached) {
+                    try { setShippingConfig(JSON.parse(cached)); } catch {}
+                }
+                // Luôn fetch mới nhất từ server để đảm bảo đúng config admin đã cài
+                const res = await axios.get(SHIPPING_API);
+                if (res.data.success) {
+                    setShippingConfig(res.data.data);
+                    localStorage.setItem('shippingConfig', JSON.stringify(res.data.data));
+                }
+            } catch (err) {
+                console.error('Không thể tải config phí ship:', err);
+                message.warning('Không thể tải phí ship từ server. Vui lòng thử lại!');
+            } finally {
+                setShippingConfigLoading(false);
+            }
+        };
+
+        fetchShippingConfig();
+
+        // Lắng nghe khi admin thay đổi config (cùng tab hoặc tab khác)
+        const onConfigChange = () => {
+            fetchShippingConfig();
+        };
         window.addEventListener('shippingConfigChange', onConfigChange);
         return () => window.removeEventListener('shippingConfigChange', onConfigChange);
-    }, [fetchShippingConfig]);
+    }, []);
 
     // ── KHỞI TẠO DỮ LIỆU ────────────────────────────────────────────────────
     useEffect(() => {
@@ -115,11 +139,11 @@ const Checkout = () => {
 
         if (list.length === 0 && user.address) {
             const migrated = [{
-                id:        Date.now().toString(),
-                name:      user.fullName || user.username || 'Tôi',
-                phone:     user.phone || '',
-                detail:    user.address,
-                city:      user.city || user.province || '',
+                id:     Date.now().toString(),
+                name:   user.fullName || user.username || 'Tôi',
+                phone:  user.phone || '',
+                detail: user.address,
+                city:   user.city || user.province || '',
             }];
             saveAddresses(migrated, migrated[0].id);
             setSavedAddresses(migrated);
@@ -144,10 +168,10 @@ const Checkout = () => {
         setSelectedProvince(addr?.city || '');
     }, [selectedAddressId, savedAddresses]);
 
-    // ── TÍNH TIỀN ────────────────────────────────────────────────────────────
+    // ── TÍNH TIỀN (dùng config từ API) ───────────────────────────────────────
     const subtotal       = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const discountAmount = appliedVoucher?.discountAmount || 0;
-    const shippingInfo   = calcShippingFee(selectedProvince, subtotal);
+    const shippingInfo   = calcShippingFee(selectedProvince, subtotal, shippingConfig);
     const shippingFee    = shippingInfo.fee;
     const finalTotal     = subtotal - discountAmount + shippingFee;
 
@@ -245,7 +269,7 @@ const Checkout = () => {
         localStorage.removeItem('appliedVoucher');
     };
 
-    // ── ĐẶT HÀNG (COD / PayPal) ─────────────────────────────────────────────
+    // ── ĐẶT HÀNG ────────────────────────────────────────────────────────────
     const submitOrder = async (extraData = {}) => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
         if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
@@ -392,7 +416,7 @@ const Checkout = () => {
         submitOrder();
     };
 
-    // ── Màu nút thanh toán theo phương thức ─────────────────────────────────
+    // ── Màu nút ──────────────────────────────────────────────────────────────
     const getButtonStyle = () => {
         if (paymentMethod === 'paypal') return { background: '#003087', borderColor: '#003087' };
         if (paymentMethod === 'vnpay')  return { background: '#e30019', borderColor: '#e30019' };
@@ -405,10 +429,18 @@ const Checkout = () => {
         return 'ĐẶT HÀNG NGAY';
     };
 
+    // ── Province list từ shippingConfig ──────────────────────────────────────
+    const provinceList = shippingConfig
+        ? Object.keys(shippingConfig.provinceZoneMap).sort((a, b) => a.localeCompare(b, 'vi'))
+        : [];
+
+    // ── ShippingBadge dùng config từ API ─────────────────────────────────────
     const ShippingBadge = () => {
+        if (shippingConfigLoading) return <Spin size="small" />;
         if (!selectedProvince) return (
             <span style={{ color: '#aaa', fontSize: 13 }}>Chọn tỉnh/thành để xem phí ship</span>
         );
+        if (!shippingConfig) return <span style={{ color: '#aaa', fontSize: 13 }}>Đang tải...</span>;
         if (shippingInfo.isFree) return (
             <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 13 }}>
                 MIỄN PHÍ SHIP 🎉
@@ -437,14 +469,67 @@ const Checkout = () => {
                         <Card
                             title={<span><EnvironmentOutlined /> Địa chỉ nhận hàng</span>}
                             style={{ marginBottom: 20 }}
-                            extra={!isAddingNew && savedAddresses.length < 5 && (
-                                <Button type="link" icon={<PlusOutlined />} onClick={() => setIsAddingNew(true)}>
-                                    Thêm địa chỉ
-                                </Button>
-                            )}
+                            extra={
+                                // Nút "Thêm địa chỉ" chỉ hiện khi đã có địa chỉ, chưa mở form, và chưa đủ 5
+                                savedAddresses.length > 0 && !isAddingNew && savedAddresses.length < 5 && (
+                                    <Button type="link" icon={<PlusOutlined />} onClick={() => setIsAddingNew(true)}>
+                                        Thêm địa chỉ mới
+                                    </Button>
+                                )
+                            }
                         >
-                            {!isAddingNew ? (
-                                savedAddresses.length > 0 ? (
+                            {/* ── CASE 1: Chưa có địa chỉ nào → hiện form luôn ── */}
+                            {savedAddresses.length === 0 && (
+                                <div style={{ background: '#fafafa', padding: 20, borderRadius: 8, border: '1px dashed #d9d9d9' }}>
+                                    <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
+                                        Bạn chưa có địa chỉ giao hàng. Vui lòng thêm địa chỉ mới.
+                                    </div>
+                                    <Form
+                                        form={addForm}
+                                        layout="vertical"
+                                        onFinish={handleAddNewAddress}
+                                        initialValues={{ name: userInfo?.fullName, phone: userInfo?.phone }}
+                                    >
+                                        <Row gutter={16}>
+                                            <Col span={12}>
+                                                <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
+                                                    <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
+                                                    <Input prefix={<PhoneOutlined />} placeholder="Số điện thoại" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={24}>
+                                                <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
+                                                    <Select
+                                                        showSearch
+                                                        placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
+                                                        loading={shippingConfigLoading}
+                                                        options={provinceList.map(p => ({ value: p, label: p }))}
+                                                        filterOption={(input, option) =>
+                                                            option.label.toLowerCase().includes(input.toLowerCase())
+                                                        }
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={24}>
+                                                <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
+                                                    <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Button type="primary" htmlType="submit" block>
+                                            Lưu địa chỉ
+                                        </Button>
+                                    </Form>
+                                </div>
+                            )}
+
+                            {/* ── CASE 2: Đã có địa chỉ → danh sách chọn ── */}
+                            {savedAddresses.length > 0 && (
+                                <>
                                     <List
                                         dataSource={savedAddresses}
                                         renderItem={item => (
@@ -497,80 +582,83 @@ const Checkout = () => {
                                             </div>
                                         )}
                                     />
-                                ) : (
-                                    <div style={{ textAlign: 'center', padding: 20 }}>
-                                        <Text type="secondary">Chưa có địa chỉ nào.</Text><br />
-                                        <Button type="primary" style={{ marginTop: 10 }} onClick={() => setIsAddingNew(true)}>
-                                            Thêm địa chỉ mới
-                                        </Button>
-                                    </div>
-                                )
-                            ) : (
-                                <div style={{ background: '#fafafa', padding: 20, borderRadius: 8, border: '1px dashed #d9d9d9' }}>
-                                    <Title level={5}>Thêm địa chỉ giao hàng mới</Title>
-                                    <Form
-                                        form={addForm}
-                                        layout="vertical"
-                                        onFinish={handleAddNewAddress}
-                                        initialValues={{ name: userInfo?.fullName, phone: userInfo?.phone }}
-                                    >
-                                        <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
-                                                    <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
-                                                    <Input prefix={<PhoneOutlined />} placeholder="Số điện thoại" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={24}>
-                                                <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
-                                                    <Select
-                                                        showSearch
-                                                        placeholder="Chọn tỉnh/thành phố"
-                                                        options={PROVINCE_LIST.map(p => ({ value: p, label: p }))}
-                                                        filterOption={(input, option) =>
-                                                            option.label.toLowerCase().includes(input.toLowerCase())
-                                                        }
-                                                    />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={24}>
-                                                <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
-                                                    <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-                                        <Space>
-                                            <Button type="primary" htmlType="submit">Lưu</Button>
-                                            <Button onClick={() => { setIsAddingNew(false); addForm.resetFields(); }}>Hủy</Button>
-                                        </Space>
-                                    </Form>
-                                </div>
-                            )}
 
-                            {!isAddingNew && selectedAddressId && !selectedProvince && (
-                                <div style={{
-                                    marginTop: 12, padding: '12px 16px',
-                                    background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8,
-                                }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#856404' }}>
-                                        ⚠️ Chọn tỉnh/thành phố để tính phí ship:
-                                    </div>
-                                    <Select
-                                        showSearch
-                                        style={{ width: '100%' }}
-                                        placeholder="Chọn tỉnh/thành phố..."
-                                        value={selectedProvince || undefined}
-                                        onChange={val => setSelectedProvince(val)}
-                                        options={PROVINCE_LIST.map(p => ({ value: p, label: p }))}
-                                        filterOption={(input, option) =>
-                                            option.label.toLowerCase().includes(input.toLowerCase())
-                                        }
-                                    />
-                                </div>
+                                    {/* Form thêm địa chỉ mới — chỉ mở khi bấm nút "Thêm địa chỉ mới" */}
+                                    {isAddingNew && (
+                                        <div style={{
+                                            marginTop: 12, background: '#fafafa', padding: 20,
+                                            borderRadius: 8, border: '1px dashed #91caff',
+                                        }}>
+                                            <Title level={5} style={{ marginTop: 0, marginBottom: 16, color: BLUE }}>
+                                                <PlusOutlined style={{ marginRight: 6 }} />Thêm địa chỉ giao hàng mới
+                                            </Title>
+                                            <Form
+                                                form={addForm}
+                                                layout="vertical"
+                                                onFinish={handleAddNewAddress}
+                                            >
+                                                <Row gutter={16}>
+                                                    <Col span={12}>
+                                                        <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
+                                                            <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col span={12}>
+                                                        <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
+                                                            <Input prefix={<PhoneOutlined />} placeholder="Số điện thoại" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col span={24}>
+                                                        <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
+                                                            <Select
+                                                                showSearch
+                                                                placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
+                                                                loading={shippingConfigLoading}
+                                                                options={provinceList.map(p => ({ value: p, label: p }))}
+                                                                filterOption={(input, option) =>
+                                                                    option.label.toLowerCase().includes(input.toLowerCase())
+                                                                }
+                                                            />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col span={24}>
+                                                        <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
+                                                            <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
+                                                        </Form.Item>
+                                                    </Col>
+                                                </Row>
+                                                <Space>
+                                                    <Button type="primary" htmlType="submit">Lưu địa chỉ</Button>
+                                                    <Button onClick={() => { setIsAddingNew(false); addForm.resetFields(); }}>Hủy</Button>
+                                                </Space>
+                                            </Form>
+                                        </div>
+                                    )}
+
+                                    {/* Cảnh báo nếu địa chỉ được chọn không có tỉnh/thành */}
+                                    {!isAddingNew && selectedAddressId && !selectedProvince && (
+                                        <div style={{
+                                            marginTop: 12, padding: '12px 16px',
+                                            background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8,
+                                        }}>
+                                            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#856404' }}>
+                                                ⚠️ Địa chỉ này chưa có tỉnh/thành phố. Vui lòng chọn để tính phí ship:
+                                            </div>
+                                            <Select
+                                                showSearch
+                                                style={{ width: '100%' }}
+                                                placeholder={shippingConfigLoading ? 'Đang tải danh sách...' : 'Chọn tỉnh/thành phố...'}
+                                                loading={shippingConfigLoading}
+                                                value={selectedProvince || undefined}
+                                                onChange={val => setSelectedProvince(val)}
+                                                options={provinceList.map(p => ({ value: p, label: p }))}
+                                                filterOption={(input, option) =>
+                                                    option.label.toLowerCase().includes(input.toLowerCase())
+                                                }
+                                            />
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </Card>
 
@@ -703,13 +791,14 @@ const Checkout = () => {
                                     <ShippingBadge />
                                 </div>
 
-                                {selectedProvince && !shippingInfo.isFree && subtotal > 0 && (
+                                {/* Gợi ý mua thêm để miễn ship */}
+                                {selectedProvince && shippingConfig && !shippingInfo.isFree && subtotal > 0 && (
                                     <div style={{
                                         background: '#fff7e6', border: '1px solid #ffd591',
                                         borderRadius: 6, padding: '7px 12px',
                                         fontSize: 12, color: '#d48806', marginBottom: 10,
                                     }}>
-                                        🛒 Mua thêm <b>{(FREE_SHIP_THRESHOLD - subtotal).toLocaleString('vi-VN')}đ</b> để được miễn phí ship!
+                                        🛒 Mua thêm <b>{(shippingConfig.freeShipThreshold - subtotal).toLocaleString('vi-VN')}đ</b> để được miễn phí ship!
                                     </div>
                                 )}
 
@@ -752,7 +841,7 @@ const Checkout = () => {
                                 type="primary" block size="large"
                                 loading={isProcessing || vnpayLoading}
                                 onClick={handlePlaceOrder}
-                                disabled={isAddingNew || savedAddresses.length === 0 || !selectedProvince}
+                                disabled={isAddingNew || savedAddresses.length === 0 || !selectedProvince || shippingConfigLoading}
                                 style={{
                                     height: 50,
                                     fontWeight: 700, fontSize: 15, marginTop: 8,
@@ -762,20 +851,26 @@ const Checkout = () => {
                                 {getButtonText()}
                             </Button>
 
-                            <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 8 }}>
-                                    <CarOutlined /> Bảng phí giao hàng:
-                                </div>
-                                {Object.entries(SHIPPING_ZONES).map(([zone, info]) => (
-                                    <div key={zone} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', marginBottom: 4 }}>
-                                        <span>📍 {info.label}</span>
-                                        <span style={{ fontWeight: 600, color: '#555' }}>{info.fee.toLocaleString('vi-VN')}đ</span>
+                            {/* Bảng phí giao hàng từ config admin */}
+                            {shippingConfig && (
+                                <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 8 }}>
+                                        <CarOutlined /> Bảng phí giao hàng:
                                     </div>
-                                ))}
-                                <div style={{ fontSize: 11, color: GREEN, marginTop: 6, borderTop: '1px dashed #eee', paddingTop: 6 }}>
-                                    ✅ Miễn phí ship cho đơn hàng từ {FREE_SHIP_THRESHOLD.toLocaleString('vi-VN')}đ
+                                    {Object.entries(shippingConfig.zones)
+                                        .sort(([a], [b]) => Number(a) - Number(b))
+                                        .map(([zoneId, info]) => (
+                                            <div key={zoneId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', marginBottom: 4 }}>
+                                                <span>📍 {info.label}</span>
+                                                <span style={{ fontWeight: 600, color: '#555' }}>{info.fee.toLocaleString('vi-VN')}đ</span>
+                                            </div>
+                                        ))
+                                    }
+                                    <div style={{ fontSize: 11, color: GREEN, marginTop: 6, borderTop: '1px dashed #eee', paddingTop: 6 }}>
+                                        ✅ Miễn phí ship cho đơn hàng từ {shippingConfig.freeShipThreshold.toLocaleString('vi-VN')}đ
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </Card>
                     </Col>
                 </Row>
@@ -799,8 +894,9 @@ const Checkout = () => {
                     <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
                         <Select
                             showSearch
-                            placeholder="Chọn tỉnh/thành phố"
-                            options={PROVINCE_LIST.map(p => ({ value: p, label: p }))}
+                            placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
+                            loading={shippingConfigLoading}
+                            options={provinceList.map(p => ({ value: p, label: p }))}
                             filterOption={(input, option) =>
                                 option.label.toLowerCase().includes(input.toLowerCase())
                             }
