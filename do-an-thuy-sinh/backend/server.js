@@ -11,10 +11,8 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ========== TẠO HTTP SERVER ==========
 const server = http.createServer(app);
 
-// ========== KHỞI TẠO SOCKET.IO ==========
 const io = new Server(server, {
     cors: {
         origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -24,7 +22,6 @@ const io = new Server(server, {
 
 app.set('io', io);
 
-// ========== SOCKET EVENT HANDLERS ==========
 io.on('connection', (socket) => {
     console.log('🔌 Client connected:', socket.id);
 
@@ -51,17 +48,14 @@ io.on('connection', (socket) => {
     });
 });
 
-// ========== MIDDLEWARE ==========
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// ========== KẾT NỐI MONGODB ==========
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Đã kết nối thành công tới MongoDB Atlas'))
     .catch(err => console.error('❌ Lỗi kết nối Database:', err));
 
-// ========== IMPORT ROUTES ==========
 const bannerRoutes       = require('./routes/bannerRoutes');
 const productRoutes      = require('./routes/productRoutes');
 const categoryRoutes     = require('./routes/categoryRoutes');
@@ -70,10 +64,10 @@ const authRoutes         = require('./routes/authRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
 const voucherRoutes      = require('./routes/voucherRoutes');
 const wishlistRoutes     = require('./routes/wishlist.route');
-const reviewRoutes       = require('./routes/reviewRoutes'); 
+const reviewRoutes       = require('./routes/reviewRoutes');
+const shippingRoutes     = require('./routes/ShippingRoutes');
 const vnpayRoutes        = require('./routes/vnpayRoutes');
 
-// ========== SỬ DỤNG ROUTES ==========
 app.use('/api/products',      productRoutes);
 app.use('/api/categories',    categoryRoutes);
 app.use('/api/orders',        orderRoutes);
@@ -82,12 +76,12 @@ app.use('/api/banners',       bannerRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/vouchers',      voucherRoutes);
 app.use('/api/wishlist',      wishlistRoutes);
-app.use('/api/reviews',       reviewRoutes); 
+app.use('/api/reviews',       reviewRoutes);
+app.use('/api/shipping',      shippingRoutes);
 app.use('/api/vnpay',         vnpayRoutes);
 
-// ========== ROUTE CHẠY THỬ ==========
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         message: '🐠 Server FC Junior đang chạy!',
         endpoints: {
             products:      '/api/products',
@@ -98,12 +92,13 @@ app.get('/', (req, res) => {
             conversations: '/api/conversations',
             vouchers:      '/api/vouchers',
             wishlist:      '/api/wishlist',
-            reviews:       '/api/reviews', 
+            reviews:       '/api/reviews',
+            shipping:      '/api/shipping',
+            vnpay:         '/api/vnpay',
         }
     });
 });
 
-// ========== KHỞI ĐỘNG SERVER ==========
 server.listen(PORT, () => {
     console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
     console.log(`📊 Database: MongoDB Atlas`);
@@ -111,5 +106,6 @@ server.listen(PORT, () => {
     console.log(`🔌 Socket.io đã kích hoạt!`);
     console.log(`🏷️  Voucher API: /api/vouchers`);
     console.log(`❤️  Wishlist API: /api/wishlist`);
-    console.log(`💬 Reviews API: /api/reviews`); 
+    console.log(`💬 Reviews API: /api/reviews`);
+    console.log(`🚚 Shipping API: /api/shipping`);
 });

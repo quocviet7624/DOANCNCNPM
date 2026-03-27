@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
     Row, Col, Card, Radio, Button, Input, Form,
@@ -22,6 +22,8 @@ const { Title, Text } = Typography;
 const RED   = '#c8232c';
 const GREEN = '#52c41a';
 const BLUE  = '#1890ff';
+
+const API_SHIPPING = 'http://localhost:5000/api/shipping';
 
 // ─── Helper: đọc/ghi địa chỉ dùng chung với UserProfile ─────────────────────
 const loadAddresses = () => {
@@ -58,7 +60,7 @@ const Checkout = () => {
     const [paypalStep, setPaypalStep]           = useState('form');
     const [paypalForm]                          = Form.useForm();
 
-    // VNPay ── THÊM MỚI
+    // VNPay
     const [vnpayLoading, setVnpayLoading] = useState(false);
 
     // Voucher
@@ -69,6 +71,36 @@ const Checkout = () => {
     // Shipping
     const [selectedProvince, setSelectedProvince] = useState('');
 
+    // ── SHIPPING CONFIG ĐỘNG ────────────────────────────────────────────────
+    const [shippingConfig, setShippingConfig] = useState(() => {
+        try {
+            const cached = localStorage.getItem('shippingConfig');
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    });
+
+    const fetchShippingConfig = useCallback(async () => {
+        try {
+            const res = await axios.get(`${API_SHIPPING}/config`);
+            if (res.data.success) {
+                const cfg = res.data.data;
+                setShippingConfig(cfg);
+                localStorage.setItem('shippingConfig', JSON.stringify(cfg));
+            }
+        } catch (err) {
+            console.warn('Không lấy được config ship từ server, dùng cache localStorage.', err);
+        }
+    }, []);
+
+    useEffect(() => { fetchShippingConfig(); }, [fetchShippingConfig]);
+
+    useEffect(() => {
+        const onConfigChange = () => fetchShippingConfig();
+        window.addEventListener('shippingConfigChange', onConfigChange);
+        return () => window.removeEventListener('shippingConfigChange', onConfigChange);
+    }, [fetchShippingConfig]);
+
+    // ── KHỞI TẠO DỮ LIỆU ────────────────────────────────────────────────────
     useEffect(() => {
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         if (cart.length === 0) { message.warning('Giỏ hàng trống!'); navigate('/products'); return; }
@@ -87,11 +119,12 @@ const Checkout = () => {
                 name:      user.fullName || user.username || 'Tôi',
                 phone:     user.phone || '',
                 detail:    user.address,
-                city:      '',
+                city:      user.city || user.province || '',
             }];
             saveAddresses(migrated, migrated[0].id);
             setSavedAddresses(migrated);
             setSelectedAddressId(migrated[0].id);
+            setSelectedProvince(migrated[0].city || '');
         } else {
             setSavedAddresses(list);
             setSelectedAddressId(defaultId);
@@ -111,14 +144,14 @@ const Checkout = () => {
         setSelectedProvince(addr?.city || '');
     }, [selectedAddressId, savedAddresses]);
 
-    // Tính tiền
+    // ── TÍNH TIỀN ────────────────────────────────────────────────────────────
     const subtotal       = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const discountAmount = appliedVoucher?.discountAmount || 0;
     const shippingInfo   = calcShippingFee(selectedProvince, subtotal);
     const shippingFee    = shippingInfo.fee;
     const finalTotal     = subtotal - discountAmount + shippingFee;
 
-    // ── Address helpers ───────────────────────────────────────────
+    // ── QUẢN LÝ ĐỊA CHỈ ─────────────────────────────────────────────────────
     const persistAddresses = (newList, defaultId) => {
         saveAddresses(newList, defaultId);
         setSavedAddresses(newList);
@@ -184,7 +217,7 @@ const Checkout = () => {
         });
     };
 
-    // Voucher
+    // ── VOUCHER ──────────────────────────────────────────────────────────────
     const handleApplyVoucher = async () => {
         const trimmed = voucherCode.trim().toUpperCase();
         if (!trimmed) return message.warning('Vui lòng nhập mã voucher!');
@@ -212,7 +245,7 @@ const Checkout = () => {
         localStorage.removeItem('appliedVoucher');
     };
 
-    // Tạo đơn hàng (COD / PayPal)
+    // ── ĐẶT HÀNG (COD / PayPal) ─────────────────────────────────────────────
     const submitOrder = async (extraData = {}) => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
         if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
@@ -285,7 +318,7 @@ const Checkout = () => {
         }
     };
 
-    // ── THÊM MỚI: Xử lý thanh toán VNPay ─────────────────────────
+    // ── XỬ LÝ THANH TOÁN VNPAY ──────────────────────────────────────────────
     const handleVNPayPayment = async () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
         if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
@@ -295,7 +328,6 @@ const Checkout = () => {
             const addr    = savedAddresses.find(a => a.id === selectedAddressId);
             const orderId = 'FCJR' + Date.now().toString().slice(-8);
 
-            // Lưu thông tin đơn hàng tạm để dùng sau khi VNPay redirect về
             const pendingOrder = {
                 userId:         userInfo._id || userInfo.id,
                 customerName:   addr.name,
@@ -315,14 +347,12 @@ const Checkout = () => {
             };
             localStorage.setItem('pendingVNPayOrder', JSON.stringify(pendingOrder));
 
-            // Gọi backend tạo URL thanh toán VNPay
             const res = await axios.post('http://localhost:5000/api/vnpay/create-payment', {
                 amount:    finalTotal,
                 orderInfo: `Thanh toan don hang FC Junior`,
                 orderId:   orderId,
             });
 
-            // Redirect sang trang VNPay
             window.location.href = res.data.paymentUrl;
 
         } catch (err) {
@@ -332,7 +362,6 @@ const Checkout = () => {
             setVnpayLoading(false);
         }
     };
-    // ──────────────────────────────────────────────────────────────
 
     const handlePlaceOrder = () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
@@ -342,7 +371,7 @@ const Checkout = () => {
             setPaypalStep('form');
             paypalForm.resetFields();
             setPaypalModalOpen(true);
-        } else if (paymentMethod === 'vnpay') {  // ── THÊM MỚI
+        } else if (paymentMethod === 'vnpay') {
             handleVNPayPayment();
         } else {
             submitOrder();
@@ -361,6 +390,19 @@ const Checkout = () => {
     const handlePaypalSuccess = () => {
         setPaypalModalOpen(false);
         submitOrder();
+    };
+
+    // ── Màu nút thanh toán theo phương thức ─────────────────────────────────
+    const getButtonStyle = () => {
+        if (paymentMethod === 'paypal') return { background: '#003087', borderColor: '#003087' };
+        if (paymentMethod === 'vnpay')  return { background: '#e30019', borderColor: '#e30019' };
+        return { background: RED, borderColor: RED };
+    };
+
+    const getButtonText = () => {
+        if (paymentMethod === 'paypal') return 'Pay with PayPal';
+        if (paymentMethod === 'vnpay')  return 'Thanh toán qua VNPay';
+        return 'ĐẶT HÀNG NGAY';
     };
 
     const ShippingBadge = () => {
@@ -382,26 +424,13 @@ const Checkout = () => {
         );
     };
 
-    // ── Màu nút thanh toán theo phương thức ───────────────────────
-    const getButtonStyle = () => {
-        if (paymentMethod === 'paypal')  return { background: '#003087', borderColor: '#003087' };
-        if (paymentMethod === 'vnpay')   return { background: '#e30019', borderColor: '#e30019' };
-        return { background: RED, borderColor: RED };
-    };
-
-    const getButtonText = () => {
-        if (paymentMethod === 'paypal') return 'Pay with PayPal';
-        if (paymentMethod === 'vnpay')  return 'Thanh toán qua VNPay';
-        return 'ĐẶT HÀNG NGAY';
-    };
-
     return (
         <div style={{ padding: '30px', background: '#f5f5f5', minHeight: '100vh' }}>
             <div style={{ maxWidth: 1200, margin: '0 auto' }}>
                 <Title level={2} style={{ textAlign: 'center', marginBottom: 30 }}>Thanh Toán</Title>
 
                 <Row gutter={24}>
-                    {/* CỘT TRÁI */}
+                    {/* ── CỘT TRÁI ── */}
                     <Col xs={24} lg={14}>
 
                         {/* Địa chỉ */}
@@ -549,8 +578,6 @@ const Checkout = () => {
                         <Card title={<span><CreditCardOutlined /> Phương thức thanh toán</span>} style={{ marginBottom: 20 }}>
                             <Radio.Group onChange={e => setPaymentMethod(e.target.value)} value={paymentMethod} style={{ width: '100%' }}>
                                 <Space direction="vertical" style={{ width: '100%' }}>
-
-                                    {/* COD */}
                                     <Radio value="cod" style={{ width: '100%', padding: 15, border: '1px solid #d9d9d9', borderRadius: 4 }}>
                                         <Space>
                                             <img src="https://cdn-icons-png.flaticon.com/512/2331/2331941.png" alt="cod" width={24} />
@@ -561,8 +588,6 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
-
-                                    {/* PayPal */}
                                     <Radio value="paypal" style={{ width: '100%', padding: 15, border: '1px solid #d9d9d9', borderRadius: 4 }}>
                                         <Space>
                                             <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" alt="paypal" width={60} />
@@ -573,8 +598,6 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
-
-                                    {/* VNPay ── THÊM MỚI */}
                                     <Radio value="vnpay" style={{ width: '100%', padding: 15, border: paymentMethod === 'vnpay' ? '2px solid #e30019' : '1px solid #d9d9d9', borderRadius: 4, background: paymentMethod === 'vnpay' ? '#fff5f5' : 'white', transition: 'all 0.3s' }}>
                                         <Space>
                                             <img src="https://cdn.haitrieu.com/wp-content/uploads/2022/10/Icon-VNPAY-QR.png" alt="vnpay" width={40} style={{ objectFit: 'contain' }} />
@@ -585,7 +608,6 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
-
                                 </Space>
                             </Radio.Group>
                         </Card>
@@ -637,7 +659,7 @@ const Checkout = () => {
                         </Card>
                     </Col>
 
-                    {/* CỘT PHẢI */}
+                    {/* ── CỘT PHẢI ── */}
                     <Col xs={24} lg={10}>
                         <Card title="Đơn hàng của bạn" style={{ position: 'sticky', top: 20 }}>
                             <List
@@ -759,7 +781,7 @@ const Checkout = () => {
                 </Row>
             </div>
 
-            {/* Modal sửa địa chỉ */}
+            {/* ── MODAL SỬA ĐỊA CHỈ ── */}
             <Modal
                 title="Cập nhật địa chỉ"
                 open={isEditing}
@@ -790,7 +812,7 @@ const Checkout = () => {
                 </Form>
             </Modal>
 
-            {/* Modal PayPal */}
+            {/* ── MODAL PAYPAL ── */}
             <Modal
                 title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -824,7 +846,6 @@ const Checkout = () => {
                                 <Input prefix={<span style={{ color: '#003087', fontSize: 14 }}>@</span>}
                                     placeholder="example@email.com" size="large" />
                             </Form.Item>
-
                             <Form.Item name="cardNumber" label="Số thẻ"
                                 rules={[{ required: true, message: 'Nhập số thẻ!' },
                                     { validator: (_, v) => !v || /^\d{16}$/.test(v) ? Promise.resolve() : Promise.reject('Số thẻ gồm 16 chữ số!') }]}>

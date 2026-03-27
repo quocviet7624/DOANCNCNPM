@@ -19,6 +19,8 @@ import UserProfile from './pages/UserProfile';
 import MyOrders from './pages/MyOrders';
 import AccountSettings from './pages/AccountSettings';
 import WishlistPage from './pages/WishlistPage';
+import ForgotPassword from './pages/ForgotPassword';
+import VNPayReturn from './pages/VNPayReturn';
 
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -30,8 +32,7 @@ import CategoryManagement from './pages/admin/CategoryManagement';
 import ChatManagement from './pages/admin/ChatManagement';
 import AdminVouchers from './pages/admin/AdminVouchers';
 import AdminReviews from './pages/admin/AdminReviews';
-import ForgotPassword from './pages/ForgotPassword'; 
-import VNPayReturn from './pages/VNPayReturn';// ← MỚI
+import AdminShipping from './pages/admin/AdminShipping';
 
 // ── Layout khách hàng ──
 const MainLayout = () => {
@@ -79,20 +80,19 @@ function App() {
 
                 {/* ── NHÓM ROUTE KHÁCH HÀNG ── */}
                 <Route element={<MainLayout />}>
-                    <Route path="/"            element={<Home />} />
-                    <Route path="/about"       element={<AboutPage />} />
-                    <Route path="/products"    element={<Products />} />
-                    <Route path="/cart"        element={<Cart />} />
-                    <Route path="/login"       element={<Login />} />
-                    <Route path="/register"    element={<Register />} />
-                    <Route path="/product/:id" element={<ProductDetail />} />
-                    <Route path="/profile"     element={<UserProfile />} />
-                    <Route path="/my-orders"   element={<MyOrders />} />
-                    <Route path="/settings"    element={<AccountSettings />} />
-                    <Route path="/wishlist"    element={<WishlistPage />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/vnpay-return" element={<VNPayReturn />} />
-                    
+                    <Route path="/"                 element={<Home />} />
+                    <Route path="/about"            element={<AboutPage />} />
+                    <Route path="/products"         element={<Products />} />
+                    <Route path="/cart"             element={<Cart />} />
+                    <Route path="/login"            element={<Login />} />
+                    <Route path="/register"         element={<Register />} />
+                    <Route path="/product/:id"      element={<ProductDetail />} />
+                    <Route path="/profile"          element={<UserProfile />} />
+                    <Route path="/my-orders"        element={<MyOrders />} />
+                    <Route path="/settings"         element={<AccountSettings />} />
+                    <Route path="/wishlist"         element={<WishlistPage />} />
+                    <Route path="/forgot-password"  element={<ForgotPassword />} />
+                    <Route path="/vnpay-return"     element={<VNPayReturn />} />
                 </Route>
 
                 {/* ── TRANG RIÊNG BIỆT ── */}
@@ -107,14 +107,15 @@ function App() {
                         </ProtectedRoute>
                     }
                 >
-                    <Route index                element={<AdminDashboard />} />
-                    <Route path="products"      element={<ProductManagement />} />
-                    <Route path="categories"    element={<CategoryManagement />} />
-                    <Route path="orders"        element={<OrderManagement />} />
-                    <Route path="banners"       element={<BannerManagement />} />
-                    <Route path="chat"          element={<ChatManagement />} />
-                    <Route path="vouchers"      element={<AdminVouchers />} />
-                    <Route path="reviews"       element={<AdminReviews />} /> {/* ← MỚI */}
+                    <Route index                    element={<AdminDashboard />} />
+                    <Route path="products"          element={<ProductManagement />} />
+                    <Route path="categories"        element={<CategoryManagement />} />
+                    <Route path="orders"            element={<OrderManagement />} />
+                    <Route path="banners"           element={<BannerManagement />} />
+                    <Route path="chat"              element={<ChatManagement />} />
+                    <Route path="vouchers"          element={<AdminVouchers />} />
+                    <Route path="reviews"           element={<AdminReviews />} />
+                    <Route path="shipping"          element={<AdminShipping />} />
                     <Route
                         path="users"
                         element={

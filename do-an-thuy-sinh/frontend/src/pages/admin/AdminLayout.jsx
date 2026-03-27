@@ -1,10 +1,10 @@
-// pages/admin/AdminLayout.jsx
 import React, { useEffect } from 'react';
 import { Layout, Menu, Button, message, Tag } from 'antd';
 import {
     ShoppingOutlined, UserOutlined, FileTextOutlined,
     DashboardOutlined, LogoutOutlined, VideoCameraOutlined,
     AppstoreOutlined, MessageOutlined, TagOutlined, StarOutlined,
+    CarOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 
@@ -60,7 +60,8 @@ const AdminLayout = () => {
         if (path.includes('/admin/users'))      return '4';
         if (path.includes('/admin/chat'))       return '7';
         if (path.includes('/admin/vouchers'))   return '8';
-        if (path.includes('/admin/reviews'))    return '9'; // ← MỚI
+        if (path.includes('/admin/reviews'))    return '9';
+        if (path.includes('/admin/shipping'))   return '10';
         return '1';
     };
 
@@ -75,40 +76,18 @@ const AdminLayout = () => {
                 </div>
 
                 <Menu theme="dark" mode="inline" selectedKeys={[getSelectedKey()]}>
-                    <Menu.Item key="1" icon={<DashboardOutlined />}>
-                        <Link to="/admin">Tổng quan</Link>
-                    </Menu.Item>
-                    <Menu.Item key="5" icon={<VideoCameraOutlined />}>
-                        <Link to="/admin/banners">Banner/Video</Link>
-                    </Menu.Item>
-                    <Menu.Item key="2" icon={<ShoppingOutlined />}>
-                        <Link to="/admin/products">Sản phẩm</Link>
-                    </Menu.Item>
-                    <Menu.Item key="6" icon={<AppstoreOutlined />}>
-                        <Link to="/admin/categories">Danh mục</Link>
-                    </Menu.Item>
-                    <Menu.Item key="3" icon={<FileTextOutlined />}>
-                        <Link to="/admin/orders">Đơn hàng</Link>
-                    </Menu.Item>
-
-                    {/* Chỉ admin mới thấy */}
+                    <Menu.Item key="1"  icon={<DashboardOutlined />}><Link to="/admin">Tổng quan</Link></Menu.Item>
+                    <Menu.Item key="5"  icon={<VideoCameraOutlined />}><Link to="/admin/banners">Banner/Video</Link></Menu.Item>
+                    <Menu.Item key="2"  icon={<ShoppingOutlined />}><Link to="/admin/products">Sản phẩm</Link></Menu.Item>
+                    <Menu.Item key="6"  icon={<AppstoreOutlined />}><Link to="/admin/categories">Danh mục</Link></Menu.Item>
+                    <Menu.Item key="3"  icon={<FileTextOutlined />}><Link to="/admin/orders">Đơn hàng</Link></Menu.Item>
                     {role === 'admin' && (
-                        <Menu.Item key="4" icon={<UserOutlined />}>
-                            <Link to="/admin/users">Người dùng</Link>
-                        </Menu.Item>
+                        <Menu.Item key="4" icon={<UserOutlined />}><Link to="/admin/users">Người dùng</Link></Menu.Item>
                     )}
-
-                    <Menu.Item key="7" icon={<MessageOutlined />}>
-                        <Link to="/admin/chat">Chat hỗ trợ</Link>
-                    </Menu.Item>
-                    <Menu.Item key="8" icon={<TagOutlined />}>
-                        <Link to="/admin/vouchers">Voucher</Link>
-                    </Menu.Item>
-
-                    {/* ← MỚI */}
-                    <Menu.Item key="9" icon={<StarOutlined />}>
-                        <Link to="/admin/reviews">Đánh giá</Link>
-                    </Menu.Item>
+                    <Menu.Item key="7"  icon={<MessageOutlined />}><Link to="/admin/chat">Chat hỗ trợ</Link></Menu.Item>
+                    <Menu.Item key="8"  icon={<TagOutlined />}><Link to="/admin/vouchers">Voucher</Link></Menu.Item>
+                    <Menu.Item key="9"  icon={<StarOutlined />}><Link to="/admin/reviews">Đánh giá</Link></Menu.Item>
+                    <Menu.Item key="10" icon={<CarOutlined />}><Link to="/admin/shipping">Phí ship</Link></Menu.Item>
                 </Menu>
             </Sider>
 
