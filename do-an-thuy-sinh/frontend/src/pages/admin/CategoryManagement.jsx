@@ -1,19 +1,43 @@
+/**
+ * CategoryManagement.jsx
+ * Quản lý danh mục sản phẩm - Admin Panel
+ * Tính năng: CRUD danh mục (Thêm, sửa, xóa, xem)
+ */
+
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
+import {
+    Table,
+    Button,
+    Modal,
+    Form,
+    Input,
+    message,
+    Popconfirm,
+} from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
+/**
+ * Component quản lý danh mục
+ * Hiển thị danh sách và hỗ trợ CRUD
+ */
 const CategoryManagement = () => {
+    // ===== STATE: Quản lý danh mục =====
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(false);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
     const [form] = Form.useForm();
 
-    useEffect(() => {
-        fetchCategories();
-    }, []);
+    // ===== EFFECT: Tải danh mục khi component mount =====
+    useEffect(
+        () => {
+            fetchCategories();
+        },
+        []
+    );
 
+    // ===== API: Lấy danh sách danh mục =====
     const fetchCategories = async () => {
         setLoading(true);
         try {
@@ -21,8 +45,9 @@ const CategoryManagement = () => {
             setCategories(res.data);
         } catch (error) {
             message.error('Lỗi tải danh mục!');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleSubmit = async (values) => {
