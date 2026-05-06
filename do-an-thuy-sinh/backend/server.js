@@ -53,48 +53,69 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ Đã kết nối thành công tới MongoDB Atlas'))
+    .then(async () => {
+        console.log('✅ Đã kết nối thành công tới MongoDB Atlas');
+        // Tự động seed cấu hình phí ship nếu chưa có
+        try {
+            const ShippingConfig = require('./models/ShippingConfig');
+            const { getConfig } = require('./controllers/ShippingController');
+            const count = await ShippingConfig.countDocuments({ configKey: 'default' });
+            if (count === 0) {
+                const fakeRes = {
+                    json: (data) => {
+                        if (data.success) console.log('🚚 Đã seed cấu hình phí ship mặc định (63 tỉnh/thành)!');
+                    },
+                    status: () => ({ json: () => { } }),
+                };
+                await getConfig({ body: {} }, fakeRes);
+            } else {
+                console.log('🚚 Cấu hình phí ship đã có sẵn!');
+            }
+        } catch (e) {
+            console.error('⚠️ Không thể tự seed phí ship:', e.message);
+        }
+    })
     .catch(err => console.error('❌ Lỗi kết nối Database:', err));
 
-const bannerRoutes       = require('./routes/bannerRoutes');
-const productRoutes      = require('./routes/productRoutes');
-const categoryRoutes     = require('./routes/categoryRoutes');
-const orderRoutes        = require('./routes/orderRoutes');
-const authRoutes         = require('./routes/authRoutes');
+const bannerRoutes = require('./routes/bannerRoutes');
+const productRoutes = require('./routes/productRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const authRoutes = require('./routes/authRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
-const voucherRoutes      = require('./routes/voucherRoutes');
-const wishlistRoutes     = require('./routes/wishlist.route');
-const reviewRoutes       = require('./routes/reviewRoutes');
-const shippingRoutes     = require('./routes/ShippingRoutes');
-const vnpayRoutes        = require('./routes/vnpayRoutes');
+const voucherRoutes = require('./routes/voucherRoutes');
+const wishlistRoutes = require('./routes/wishlist.route');
+const reviewRoutes = require('./routes/reviewRoutes');
+const shippingRoutes = require('./routes/ShippingRoutes');
+const vnpayRoutes = require('./routes/vnpayRoutes');
 
-app.use('/api/products',      productRoutes);
-app.use('/api/categories',    categoryRoutes);
-app.use('/api/orders',        orderRoutes);
-app.use('/api/auth',          authRoutes);
-app.use('/api/banners',       bannerRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/banners', bannerRoutes);
 app.use('/api/conversations', conversationRoutes);
-app.use('/api/vouchers',      voucherRoutes);
-app.use('/api/wishlist',      wishlistRoutes);
-app.use('/api/reviews',       reviewRoutes);
-app.use('/api/shipping',      shippingRoutes);
-app.use('/api/vnpay',         vnpayRoutes);
+app.use('/api/vouchers', voucherRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/shipping', shippingRoutes);
+app.use('/api/vnpay', vnpayRoutes);
 
 app.get('/', (req, res) => {
     res.json({
         message: '🐠 Server FC Junior đang chạy!',
         endpoints: {
-            products:      '/api/products',
-            categories:    '/api/categories',
-            orders:        '/api/orders',
-            auth:          '/api/auth',
-            banners:       '/api/banners',
+            products: '/api/products',
+            categories: '/api/categories',
+            orders: '/api/orders',
+            auth: '/api/auth',
+            banners: '/api/banners',
             conversations: '/api/conversations',
-            vouchers:      '/api/vouchers',
-            wishlist:      '/api/wishlist',
-            reviews:       '/api/reviews',
-            shipping:      '/api/shipping',
-            vnpay:         '/api/vnpay',
+            vouchers: '/api/vouchers',
+            wishlist: '/api/wishlist',
+            reviews: '/api/reviews',
+            shipping: '/api/shipping',
+            vnpay: '/api/vnpay',
         }
     });
 });
