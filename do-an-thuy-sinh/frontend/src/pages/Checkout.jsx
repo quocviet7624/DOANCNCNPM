@@ -15,16 +15,16 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
-const RED   = '#c8232c';
+const RED = '#c8232c';
 const GREEN = '#52c41a';
-const BLUE  = '#1890ff';
+const BLUE = '#1890ff';
 
 const SHIPPING_API = 'http://localhost:5000/api/shipping/config';
 
 // ─── Helper: đọc/ghi địa chỉ dùng chung với UserProfile ─────────────────────
 const loadAddresses = () => {
     try {
-        const list  = JSON.parse(localStorage.getItem('addresses') || '[]');
+        const list = JSON.parse(localStorage.getItem('addresses') || '[]');
         const defId = localStorage.getItem('defaultAddressId');
         return { list, defaultId: defId || list[0]?.id || null };
     } catch { return { list: [], defaultId: null }; }
@@ -36,50 +36,67 @@ const saveAddresses = (list, defaultId) => {
         localStorage.setItem('defaultAddressId', defaultId);
 };
 
-// ─── Tính phí ship từ config do admin cài đặt ────────────────────────────────
+// ─── Tính phí ship từ config do admin cài đặt (theo km) ─────────────────────
+const calcFeeFromKm = (distanceKm, tiers, baseFee) => {
+    if (!tiers || tiers.length === 0) return baseFee || 0;
+    const sorted = [...tiers].sort((a, b) => a.minKm - b.minKm);
+    let remaining = distanceKm;
+    let total = 0;
+    for (const tier of sorted) {
+        if (remaining <= 0) break;
+        const tierEnd = (tier.maxKm !== null && tier.maxKm !== undefined) ? tier.maxKm : Infinity;
+        const tierLen = tierEnd - tier.minKm;
+        const kmInTier = Math.min(remaining, tierLen);
+        if (kmInTier > 0) { total += kmInTier * tier.pricePerKm; remaining -= kmInTier; }
+    }
+    return Math.max(Math.round(total / 1000) * 1000, baseFee || 0);
+};
+
 const calcShippingFee = (province, subtotal, shippingConfig) => {
     if (!shippingConfig || !province) return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
 
-    const { freeShipThreshold, zones, provinceZoneMap } = shippingConfig;
+    const { freeShipThreshold, kmTiers, baseFee, provinceDistanceMap } = shippingConfig;
+
+    // Guard: nếu API chưa trả về đủ dữ liệu
+    if (!provinceDistanceMap) return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
+
+    const distanceKm = provinceDistanceMap[province];
+    if (distanceKm === undefined) return { fee: 0, isFree: false, zoneLabel: 'Không xác định', originalFee: 0 };
+
+    const originalFee = calcFeeFromKm(distanceKm, kmTiers, baseFee);
+    const zoneLabel = distanceKm + ' km';
 
     if (subtotal >= freeShipThreshold) {
-        const zoneId   = provinceZoneMap[province];
-        const zoneInfo = zones[zoneId];
-        return { fee: 0, isFree: true, zoneLabel: zoneInfo?.label || '', originalFee: zoneInfo?.fee || 0 };
+        return { fee: 0, isFree: true, zoneLabel, originalFee };
     }
-
-    const zoneId   = provinceZoneMap[province];
-    const zoneInfo = zones[zoneId];
-    if (!zoneInfo) return { fee: 0, isFree: false, zoneLabel: 'Không xác định', originalFee: 0 };
-
-    return { fee: zoneInfo.fee, isFree: false, zoneLabel: zoneInfo.label, originalFee: zoneInfo.fee };
+    return { fee: originalFee, isFree: false, zoneLabel, originalFee };
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Checkout = () => {
     const navigate = useNavigate();
-    const [cartItems, setCartItems]                   = useState([]);
-    const [userInfo, setUserInfo]                     = useState(null);
-    const [savedAddresses, setSavedAddresses]         = useState([]);
-    const [selectedAddressId, setSelectedAddressId]   = useState(null);
-    const [isAddingNew, setIsAddingNew]               = useState(false);
-    const [addForm]                                   = Form.useForm();
-    const [isEditing, setIsEditing]                   = useState(false);
-    const [editingAddress, setEditingAddress]         = useState(null);
-    const [editForm]                                  = Form.useForm();
-    const [paymentMethod, setPaymentMethod]           = useState('cod');
-    const [isProcessing, setIsProcessing]             = useState(false);
+    const [cartItems, setCartItems] = useState([]);
+    const [userInfo, setUserInfo] = useState(null);
+    const [savedAddresses, setSavedAddresses] = useState([]);
+    const [selectedAddressId, setSelectedAddressId] = useState(null);
+    const [isAddingNew, setIsAddingNew] = useState(false);
+    const [addForm] = Form.useForm();
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingAddress, setEditingAddress] = useState(null);
+    const [editForm] = Form.useForm();
+    const [paymentMethod, setPaymentMethod] = useState('cod');
+    const [isProcessing, setIsProcessing] = useState(false);
 
     // PayPal modal
     const [paypalModalOpen, setPaypalModalOpen] = useState(false);
-    const [paypalStep, setPaypalStep]           = useState('form');
-    const [paypalForm]                          = Form.useForm();
+    const [paypalStep, setPaypalStep] = useState('form');
+    const [paypalForm] = Form.useForm();
 
     // VNPay
     const [vnpayLoading, setVnpayLoading] = useState(false);
 
     // Voucher
-    const [voucherCode, setVoucherCode]       = useState('');
+    const [voucherCode, setVoucherCode] = useState('');
     const [voucherLoading, setVoucherLoading] = useState(false);
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
@@ -87,8 +104,12 @@ const Checkout = () => {
     const [selectedProvince, setSelectedProvince] = useState('');
 
     // ── Shipping config từ API ───────────────────────────────────────────────
-    const [shippingConfig, setShippingConfig]       = useState(null);
+    const [shippingConfig, setShippingConfig] = useState(null);
     const [shippingConfigLoading, setShippingConfigLoading] = useState(true);
+
+    // ── Shipping fee tính từ API (luôn đồng bộ với backend) ─────────────────
+    const [shippingInfo, setShippingInfo] = useState({ fee: 0, isFree: false, zoneLabel: '', originalFee: 0 });
+    const [shippingFeeLoading, setShippingFeeLoading] = useState(false);
 
     // ── Load shipping config từ server (admin quản lý) ──────────────────────
     useEffect(() => {
@@ -96,15 +117,15 @@ const Checkout = () => {
             setShippingConfigLoading(true);
             try {
                 // Ưu tiên dùng cache localStorage nếu có, để tránh chờ quá lâu
-                const cached = localStorage.getItem('shippingConfig');
+                const cached = localStorage.getItem('ShippingConfig_v2');
                 if (cached) {
-                    try { setShippingConfig(JSON.parse(cached)); } catch {}
+                    try { setShippingConfig(JSON.parse(cached)); } catch { }
                 }
                 // Luôn fetch mới nhất từ server để đảm bảo đúng config admin đã cài
                 const res = await axios.get(SHIPPING_API);
                 if (res.data.success) {
                     setShippingConfig(res.data.data);
-                    localStorage.setItem('shippingConfig', JSON.stringify(res.data.data));
+                    localStorage.setItem('ShippingConfig_v2', JSON.stringify(res.data.data));
                 }
             } catch (err) {
                 console.error('Không thể tải config phí ship:', err);
@@ -139,11 +160,11 @@ const Checkout = () => {
 
         if (list.length === 0 && user.address) {
             const migrated = [{
-                id:     Date.now().toString(),
-                name:   user.fullName || user.username || 'Tôi',
-                phone:  user.phone || '',
+                id: Date.now().toString(),
+                name: user.fullName || user.username || 'Tôi',
+                phone: user.phone || '',
                 detail: user.address,
-                city:   user.city || user.province || '',
+                city: user.city || user.province || '',
             }];
             saveAddresses(migrated, migrated[0].id);
             setSavedAddresses(migrated);
@@ -159,7 +180,7 @@ const Checkout = () => {
         if (list.length === 0 && !user.address) setIsAddingNew(true);
 
         const savedVoucher = localStorage.getItem('appliedVoucher');
-        if (savedVoucher) { try { setAppliedVoucher(JSON.parse(savedVoucher)); } catch {} }
+        if (savedVoucher) { try { setAppliedVoucher(JSON.parse(savedVoucher)); } catch { } }
     }, [navigate]);
 
     useEffect(() => {
@@ -168,12 +189,47 @@ const Checkout = () => {
         setSelectedProvince(addr?.city || '');
     }, [selectedAddressId, savedAddresses]);
 
-    // ── TÍNH TIỀN (dùng config từ API) ───────────────────────────────────────
-    const subtotal       = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    // ── Tính phí ship qua API backend (luôn dùng config mới nhất) ────────────
+    const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    useEffect(() => {
+        if (!selectedProvince) {
+            setShippingInfo({ fee: 0, isFree: false, zoneLabel: '', originalFee: 0 });
+            return;
+        }
+        const fetchFee = async () => {
+            setShippingFeeLoading(true);
+            try {
+                const res = await axios.post('http://localhost:5000/api/shipping/calculate', {
+                    province: selectedProvince,
+                    subtotal,
+                });
+                if (res.data.success) {
+                    const { fee, originalFee, isFree, distanceKm } = res.data.data;
+                    setShippingInfo({
+                        fee,
+                        isFree,
+                        originalFee,
+                        zoneLabel: distanceKm + ' km',
+                    });
+                }
+            } catch (err) {
+                console.error('Không thể tính phí ship:', err);
+                // fallback client-side nếu API lỗi
+                const fallback = calcShippingFee(selectedProvince, subtotal, shippingConfig);
+                setShippingInfo(fallback);
+            } finally {
+                setShippingFeeLoading(false);
+            }
+        };
+        fetchFee();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedProvince, subtotal]);
+
+    // ── TÍNH TIỀN ────────────────────────────────────────────────────────────
     const discountAmount = appliedVoucher?.discountAmount || 0;
-    const shippingInfo   = calcShippingFee(selectedProvince, subtotal, shippingConfig);
-    const shippingFee    = shippingInfo.fee;
-    const finalTotal     = subtotal - discountAmount + shippingFee;
+    const shippingFee = shippingInfo.fee;
+    const finalTotal = subtotal - discountAmount + shippingFee;
 
     // ── QUẢN LÝ ĐỊA CHỈ ─────────────────────────────────────────────────────
     const persistAddresses = (newList, defaultId) => {
@@ -183,11 +239,11 @@ const Checkout = () => {
 
     const handleAddNewAddress = (values) => {
         const newAddr = {
-            id:     Date.now().toString(),
-            name:   values.name,
-            phone:  values.phone,
+            id: Date.now().toString(),
+            name: values.name,
+            phone: values.phone,
             detail: values.detail,
-            city:   values.province || '',
+            city: values.province || '',
         };
         const newList = [...savedAddresses, newAddr];
         const newDefId = newList.length === 1 ? newAddr.id : localStorage.getItem('defaultAddressId');
@@ -218,9 +274,9 @@ const Checkout = () => {
         e.stopPropagation();
         setEditingAddress(address);
         editForm.setFieldsValue({
-            name:     address.name,
-            phone:    address.phone,
-            detail:   address.detail,
+            name: address.name,
+            phone: address.phone,
+            detail: address.detail,
             province: address.city || '',
         });
         setIsEditing(true);
@@ -272,27 +328,27 @@ const Checkout = () => {
     // ── ĐẶT HÀNG ────────────────────────────────────────────────────────────
     const submitOrder = async (extraData = {}) => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
 
         setIsProcessing(true);
-        const addr   = savedAddresses.find(a => a.id === selectedAddressId);
+        const addr = savedAddresses.find(a => a.id === selectedAddressId);
         const isPaid = paymentMethod === 'paypal';
 
         const orderData = {
-            userId:         userInfo._id || userInfo.id,
-            customerName:   addr.name,
-            phone:          addr.phone,
-            address:        addr.detail,
-            province:       selectedProvince,
-            items:          cartItems,
+            userId: userInfo._id || userInfo.id,
+            customerName: addr.name,
+            phone: addr.phone,
+            address: addr.detail,
+            province: selectedProvince,
+            items: cartItems,
             subtotalAmount: subtotal,
             discountAmount,
             shippingFee,
-            totalAmount:    finalTotal,
-            voucherCode:    appliedVoucher?.code || null,
-            paymentMethod:  isPaid ? 'PayPal' : 'COD',
+            totalAmount: finalTotal,
+            voucherCode: appliedVoucher?.code || null,
+            paymentMethod: isPaid ? 'PayPal' : 'COD',
             isPaid,
-            status:         'Chờ xác nhận',
+            status: 'Chờ xác nhận',
             ...extraData,
         };
 
@@ -301,26 +357,26 @@ const Checkout = () => {
             const savedOrder = res.data.order;
 
             if (appliedVoucher?.code) {
-                try { await axios.post(`http://localhost:5000/api/vouchers/confirm-use/${appliedVoucher.code}`); } catch {}
+                try { await axios.post(`http://localhost:5000/api/vouchers/confirm-use/${appliedVoucher.code}`); } catch { }
             }
 
             const newOrderLocal = {
-                id:             savedOrder._id,
-                orderId:        savedOrder._id.slice(-8).toUpperCase(),
-                items:          cartItems,
+                id: savedOrder._id,
+                orderId: savedOrder._id.slice(-8).toUpperCase(),
+                items: cartItems,
                 subtotalAmount: subtotal,
                 discountAmount,
                 shippingFee,
-                totalAmount:    finalTotal,
-                voucherCode:    appliedVoucher?.code || null,
-                orderDate:      new Date().toLocaleString('vi-VN'),
-                status:         'pending',
+                totalAmount: finalTotal,
+                voucherCode: appliedVoucher?.code || null,
+                orderDate: new Date().toLocaleString('vi-VN'),
+                status: 'pending',
                 isPaid,
-                paymentMethod:  isPaid ? 'PayPal' : 'COD',
-                customerName:   addr.name,
-                phone:          addr.phone,
-                address:        addr.detail,
-                province:       selectedProvince,
+                paymentMethod: isPaid ? 'PayPal' : 'COD',
+                customerName: addr.name,
+                phone: addr.phone,
+                address: addr.detail,
+                province: selectedProvince,
             };
             const history = JSON.parse(localStorage.getItem('orderHistory') || '[]');
             history.unshift(newOrderLocal);
@@ -345,36 +401,36 @@ const Checkout = () => {
     // ── XỬ LÝ THANH TOÁN VNPAY ──────────────────────────────────────────────
     const handleVNPayPayment = async () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
 
         setVnpayLoading(true);
         try {
-            const addr    = savedAddresses.find(a => a.id === selectedAddressId);
+            const addr = savedAddresses.find(a => a.id === selectedAddressId);
             const orderId = 'FCJR' + Date.now().toString().slice(-8);
 
             const pendingOrder = {
-                userId:         userInfo._id || userInfo.id,
-                customerName:   addr.name,
-                phone:          addr.phone,
-                address:        addr.detail,
-                province:       selectedProvince,
-                items:          cartItems,
+                userId: userInfo._id || userInfo.id,
+                customerName: addr.name,
+                phone: addr.phone,
+                address: addr.detail,
+                province: selectedProvince,
+                items: cartItems,
                 subtotalAmount: subtotal,
                 discountAmount,
                 shippingFee,
-                totalAmount:    finalTotal,
-                voucherCode:    appliedVoucher?.code || null,
-                paymentMethod:  'VNPay',
-                isPaid:         false,
-                status:         'Chờ xác nhận',
-                vnpayOrderId:   orderId,
+                totalAmount: finalTotal,
+                voucherCode: appliedVoucher?.code || null,
+                paymentMethod: 'VNPay',
+                isPaid: false,
+                status: 'Chờ xác nhận',
+                vnpayOrderId: orderId,
             };
             localStorage.setItem('pendingVNPayOrder', JSON.stringify(pendingOrder));
 
             const res = await axios.post('http://localhost:5000/api/vnpay/create-payment', {
-                amount:    finalTotal,
+                amount: finalTotal,
                 orderInfo: `Thanh toan don hang FC Junior`,
-                orderId:   orderId,
+                orderId: orderId,
             });
 
             window.location.href = res.data.paymentUrl;
@@ -389,7 +445,7 @@ const Checkout = () => {
 
     const handlePlaceOrder = () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
 
         if (paymentMethod === 'paypal') {
             setPaypalStep('form');
@@ -408,7 +464,7 @@ const Checkout = () => {
                 setPaypalStep('processing');
                 setTimeout(() => setPaypalStep('success'), 2000);
             })
-            .catch(() => {});
+            .catch(() => { });
     };
 
     const handlePaypalSuccess = () => {
@@ -419,28 +475,27 @@ const Checkout = () => {
     // ── Màu nút ──────────────────────────────────────────────────────────────
     const getButtonStyle = () => {
         if (paymentMethod === 'paypal') return { background: '#003087', borderColor: '#003087' };
-        if (paymentMethod === 'vnpay')  return { background: '#e30019', borderColor: '#e30019' };
+        if (paymentMethod === 'vnpay') return { background: '#e30019', borderColor: '#e30019' };
         return { background: RED, borderColor: RED };
     };
 
     const getButtonText = () => {
         if (paymentMethod === 'paypal') return 'Pay with PayPal';
-        if (paymentMethod === 'vnpay')  return 'Thanh toán qua VNPay';
+        if (paymentMethod === 'vnpay') return 'Thanh toán qua VNPay';
         return 'ĐẶT HÀNG NGAY';
     };
 
     // ── Province list từ shippingConfig ──────────────────────────────────────
-    const provinceList = shippingConfig
-        ? Object.keys(shippingConfig.provinceZoneMap).sort((a, b) => a.localeCompare(b, 'vi'))
+    const provinceList = shippingConfig?.provinceDistanceMap
+        ? Object.keys(shippingConfig.provinceDistanceMap).sort((a, b) => a.localeCompare(b, 'vi'))
         : [];
 
-    // ── ShippingBadge dùng config từ API ─────────────────────────────────────
+    // ── ShippingBadge dùng API backend ──────────────────────────────────────
     const ShippingBadge = () => {
-        if (shippingConfigLoading) return <Spin size="small" />;
+        if (shippingConfigLoading || shippingFeeLoading) return <Spin size="small" />;
         if (!selectedProvince) return (
             <span style={{ color: '#aaa', fontSize: 13 }}>Chọn tỉnh/thành để xem phí ship</span>
         );
-        if (!shippingConfig) return <span style={{ color: '#aaa', fontSize: 13 }}>Đang tải...</span>;
         if (shippingInfo.isFree) return (
             <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 13 }}>
                 MIỄN PHÍ SHIP 🎉
@@ -852,17 +907,17 @@ const Checkout = () => {
                             </Button>
 
                             {/* Bảng phí giao hàng từ config admin */}
-                            {shippingConfig && (
+                            {shippingConfig && shippingConfig.kmTiers && shippingConfig.kmTiers.length > 0 && (
                                 <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 8 }}>
-                                        <CarOutlined /> Bảng phí giao hàng:
+                                        <CarOutlined /> Bảng phí giao hàng theo khoảng cách:
                                     </div>
-                                    {Object.entries(shippingConfig.zones)
-                                        .sort(([a], [b]) => Number(a) - Number(b))
-                                        .map(([zoneId, info]) => (
-                                            <div key={zoneId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', marginBottom: 4 }}>
-                                                <span>📍 {info.label}</span>
-                                                <span style={{ fontWeight: 600, color: '#555' }}>{info.fee.toLocaleString('vi-VN')}đ</span>
+                                    {[...shippingConfig.kmTiers]
+                                        .sort((a, b) => a.minKm - b.minKm)
+                                        .map((tier, idx) => (
+                                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', marginBottom: 4 }}>
+                                                <span>📍 {tier.label}</span>
+                                                <span style={{ fontWeight: 600, color: '#555' }}>{tier.pricePerKm.toLocaleString('vi-VN')}đ/km</span>
                                             </div>
                                         ))
                                     }
@@ -944,7 +999,7 @@ const Checkout = () => {
                             </Form.Item>
                             <Form.Item name="cardNumber" label="Số thẻ"
                                 rules={[{ required: true, message: 'Nhập số thẻ!' },
-                                    { validator: (_, v) => !v || /^\d{16}$/.test(v) ? Promise.resolve() : Promise.reject('Số thẻ gồm 16 chữ số!') }]}>
+                                { validator: (_, v) => !v || /^\d{16}$/.test(v) ? Promise.resolve() : Promise.reject('Số thẻ gồm 16 chữ số!') }]}>
                                 <Input placeholder="1234 5678 9012 3456" maxLength={16} size="large"
                                     prefix={<CreditCardOutlined style={{ color: '#003087' }} />}
                                     onChange={e => paypalForm.setFieldValue('cardNumber', e.target.value.replace(/\D/g, ''))} />
@@ -954,18 +1009,18 @@ const Checkout = () => {
                                 <Col span={12}>
                                     <Form.Item name="expiry" label="Ngày hết hạn"
                                         rules={[{ required: true, message: 'Nhập ngày hết hạn!' },
-                                            { validator: (_, v) => !v || /^(0[1-9]|1[0-2])\/\d{2}$/.test(v) ? Promise.resolve() : Promise.reject('Định dạng MM/YY') }]}>
+                                        { validator: (_, v) => !v || /^(0[1-9]|1[0-2])\/\d{2}$/.test(v) ? Promise.resolve() : Promise.reject('Định dạng MM/YY') }]}>
                                         <Input placeholder="MM/YY" maxLength={5} size="large"
                                             onChange={e => {
                                                 let d = e.target.value.replace(/[^\d]/g, '');
-                                                paypalForm.setFieldValue('expiry', d.length >= 3 ? d.slice(0,2)+'/'+d.slice(2,4) : d);
+                                                paypalForm.setFieldValue('expiry', d.length >= 3 ? d.slice(0, 2) + '/' + d.slice(2, 4) : d);
                                             }} />
                                     </Form.Item>
                                 </Col>
                                 <Col span={12}>
                                     <Form.Item name="cvv" label="CVV"
                                         rules={[{ required: true, message: 'Nhập CVV!' },
-                                            { validator: (_, v) => !v || /^\d{3,4}$/.test(v) ? Promise.resolve() : Promise.reject('CVV gồm 3-4 số!') }]}>
+                                        { validator: (_, v) => !v || /^\d{3,4}$/.test(v) ? Promise.resolve() : Promise.reject('CVV gồm 3-4 số!') }]}>
                                         <Input.Password placeholder="•••" maxLength={4} size="large"
                                             onChange={e => paypalForm.setFieldValue('cvv', e.target.value.replace(/\D/g, ''))} />
                                     </Form.Item>

@@ -1,22 +1,5 @@
-/**
- * Products.jsx
- * Trang danh sách sản phẩm - Cửa hàng thủy sinh
- * Tính năng: Tìm kiếm, lọc danh mục, đưa hàng vào giỏ
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-    Card,
-    Row,
-    Col,
-    Button,
-    Select,
-    Input,
-    message,
-    Spin,
-    Tag,
-    Empty,
-} from 'antd';
+import { Card, Row, Col, Button, Select, Input, message, Spin, Tag, Empty } from 'antd';
 import { ShoppingCartOutlined, SearchOutlined, StarFilled } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -25,9 +8,6 @@ const { Meta } = Card;
 const { Option } = Select;
 const { Search } = Input;
 
-/**
- * Lấy ID người dùng từ localStorage
- */
 const getUserId = () => {
     try {
         const userObj = JSON.parse(localStorage.getItem('user') || '{}');
@@ -37,40 +17,28 @@ const getUserId = () => {
     }
 };
 
-/**
- * Component trang sản phẩm - Hiển thị danh sách và lọc dữ liệu
- */
 const Products = () => {
-    // ===== ROUTER & LOCATION =====
     const navigate = useNavigate();
     const location = useLocation();
 
-    // ===== STATE: Quản lý sản phẩm, lọc, tìm kiếm =====
-    const [products, setProducts] = useState([]);
+    const [products,         setProducts]         = useState([]);
     const [filteredProducts, setFilteredProducts] = useState([]);
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [categories,       setCategories]       = useState([]);
+    const [loading,          setLoading]          = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('all');
-    const [searchText, setSearchText] = useState('');
+    const [searchText,       setSearchText]       = useState('');
 
-    // ===== EFFECT: Đọc tám tìm kiếm từ URL =====
-    useEffect(
-        () => {
-            const params = new URLSearchParams(location.search);
-            const keyword = params.get('search') || '';
-            setSearchText(keyword);
-        },
-        [location.search]
-    );
+    // ── Đọc ?search= từ URL mỗi khi URL thay đổi (navbar search) ────────────
+    useEffect(() => {
+        const params  = new URLSearchParams(location.search);
+        const keyword = params.get('search') || '';
+        setSearchText(keyword);
+    }, [location.search]);
 
-    // ===== EFFECT: Tải dữ liệu ban đầu =====
-    useEffect(
-        () => {
-            fetchProducts();
-            fetchCategories();
-        },
-        []
-    );
+    useEffect(() => {
+        fetchProducts();
+        fetchCategories();
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── filterData bọc trong useCallback để tránh warning exhaustive-deps ────
     const filterData = useCallback((category, keyword) => {

@@ -1,42 +1,11 @@
-/**
- * ProductManagement.jsx
- * Quản lý sản phẩm - Admin Panel
- * Tính năng: Thêm, sửa, xóa sản phẩm với hỗ trợ upload/nhập link ảnh
- */
-
 import React, { useState, useEffect } from 'react';
-import {
-    Table,
-    Button,
-    Modal,
-    Form,
-    Input,
-    Select,
-    InputNumber,
-    message,
-    Popconfirm,
-    Upload,
-    Image,
-    Space,
-} from 'antd';
-import {
-    PlusOutlined,
-    EditOutlined,
-    DeleteOutlined,
-    UploadOutlined,
-    LinkOutlined,
-    CloseCircleOutlined,
-} from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Popconfirm, Upload, Image, Space } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined, LinkOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
 const { Option } = Select;
 
-/**
- * Component chính quản lý sản phẩm
- * Quản lý danh sách sản phẩm, hình ảnh, giá, tồn kho
- */
 const ProductManagement = () => {
-    // ===== STATE: Quản lý dữ liệu sản phẩm & form =====
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -44,23 +13,17 @@ const ProductManagement = () => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [form] = Form.useForm();
 
-    // ===== STATE: Quản lý hình ảnh (link/upload) =====
     const [imageMode, setImageMode] = useState('link');
     const [imageLinks, setImageLinks] = useState(['']);
     const [uploadedImages, setUploadedImages] = useState([]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
 
-    // ===== EFFECT: Load dữ liệu khi component mount =====
-    useEffect(
-        () => {
-            fetchProducts();
-            fetchCategories();
-        },
-        []
-    );
+    useEffect(() => {
+        fetchProducts();
+        fetchCategories();
+    }, []);
 
-    // ===== API: Lấy danh sách sản phẩm từ server =====
     const fetchProducts = async () => {
         setLoading(true);
         try {
@@ -68,9 +31,8 @@ const ProductManagement = () => {
             setProducts(res.data);
         } catch (error) {
             message.error('Không thể tải sản phẩm!');
-        } finally {
-            setLoading(false);
         }
+        setLoading(false);
     };
 
     const fetchCategories = async () => {
@@ -82,7 +44,6 @@ const ProductManagement = () => {
         }
     };
 
-    // ===== HELPER: Reset trạng thái ảnh khi đóng modal =====
     const resetImageStates = () => {
         setImageMode('link');
         setImageLinks(['']);
