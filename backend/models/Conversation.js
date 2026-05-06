@@ -61,3 +61,4 @@ const conversationSchema = new mongoose.Schema({
 
 // Export model Conversation để thao tác với collection trong MongoDB
 module.exports = mongoose.model('Conversation', conversationSchema);
+// update conversation model

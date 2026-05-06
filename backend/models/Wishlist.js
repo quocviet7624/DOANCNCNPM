@@ -27,3 +27,4 @@ const wishlistSchema = new mongoose.Schema(
 wishlistSchema.index({ userId: 1, productId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Wishlist', wishlistSchema);
+// update wishlist model
