@@ -1,45 +1,46 @@
 // utils/shippingFee.js
 // ================================================================
-// SHIPPING FEE CALCULATOR
-// Config được quản lý qua Admin → Phí giao hàng (lưu vào MongoDB).
-// Frontend cache vào localStorage để dùng offline / tránh delay.
+// SHIPPING FEE CALCULATOR — Tính phí ship theo km
+// Phí = tổng (km trong từng bậc × giá/km), tối thiểu = baseFee
+// Config quản lý qua Admin Panel, cache vào localStorage.
 // ================================================================
 
 const API_URL = 'http://localhost:5000/api/shipping/config';
-const CACHE_KEY = 'ShippingConfig';
+const CACHE_KEY = 'ShippingConfig_v2';
 
-// ── Cấu hình mặc định (fallback khi API chưa trả về) ─────────────────────────
-const DEFAULT_CONFIG = {
-    freeShipThreshold: 300000,
-    zones: {
-        1: { label: 'Nội thành Đà Nẵng', fee: 15000 },
-        2: { label: 'Miền Trung lân cận', fee: 25000 },
-        3: { label: 'Miền Nam / Miền Bắc', fee: 35000 },
-    },
-    provinceZoneMap: {
-        'Đà Nẵng': 1,
-        'Thừa Thiên Huế': 2, 'Quảng Nam': 2, 'Quảng Ngãi': 2,
-        'Bình Định': 2, 'Phú Yên': 2, 'Khánh Hòa': 2,
-        'Quảng Trị': 2, 'Quảng Bình': 2, 'Hà Tĩnh': 2,
-        'Nghệ An': 2, 'Thanh Hóa': 2, 'Ninh Thuận': 2,
-        'Bình Thuận': 2, 'Kon Tum': 2, 'Gia Lai': 2,
-        'Đắk Lắk': 2, 'Đắk Nông': 2, 'Lâm Đồng': 2,
-        'Hà Nội': 3, 'Hải Phòng': 3, 'Hải Dương': 3,
-        'Hưng Yên': 3, 'Hà Nam': 3, 'Nam Định': 3,
-        'Thái Bình': 3, 'Ninh Bình': 3, 'Vĩnh Phúc': 3,
-        'Bắc Ninh': 3, 'Bắc Giang': 3, 'Thái Nguyên': 3,
-        'Phú Thọ': 3, 'Tuyên Quang': 3, 'Yên Bái': 3,
-        'Lào Cai': 3, 'Lai Châu': 3, 'Điện Biên': 3,
-        'Sơn La': 3, 'Hòa Bình': 3, 'Hà Giang': 3,
-        'Cao Bằng': 3, 'Bắc Kạn': 3, 'Lạng Sơn': 3,
-        'Quảng Ninh': 3,
-        'Hồ Chí Minh': 3, 'Bình Dương': 3, 'Đồng Nai': 3,
-        'Bà Rịa - Vũng Tàu': 3, 'Long An': 3, 'Tiền Giang': 3,
-        'Bến Tre': 3, 'Trà Vinh': 3, 'Vĩnh Long': 3,
-        'Đồng Tháp': 3, 'An Giang': 3, 'Kiên Giang': 3,
-        'Cần Thơ': 3, 'Hậu Giang': 3, 'Sóc Trăng': 3,
-        'Bạc Liêu': 3, 'Cà Mau': 3, 'Tây Ninh': 3,
-        'Bình Phước': 3,
+// ── Cấu hình mặc định (fallback) ─────────────────────────────────────────────
+export const DEFAULT_CONFIG = {
+    warehouseAddress: 'Đà Nẵng',
+    baseFee: 15000,
+    freeShipThreshold: 500000,
+    kmTiers: [
+        { minKm: 0, maxKm: 50, pricePerKm: 2000, label: '0 – 50 km' },
+        { minKm: 50, maxKm: 200, pricePerKm: 1500, label: '50 – 200 km' },
+        { minKm: 200, maxKm: 500, pricePerKm: 1000, label: '200 – 500 km' },
+        { minKm: 500, maxKm: null, pricePerKm: 700, label: '> 500 km' },
+    ],
+    provinceDistanceMap: {
+        'Đà Nẵng': 5, 'Quảng Nam': 60, 'Thừa Thiên Huế': 100,
+        'Quảng Ngãi': 130, 'Quảng Trị': 170, 'Quảng Bình': 230,
+        'Bình Định': 200, 'Phú Yên': 280, 'Khánh Hòa': 370,
+        'Hà Tĩnh': 320, 'Nghệ An': 400, 'Thanh Hóa': 510,
+        'Kon Tum': 230, 'Gia Lai': 260, 'Đắk Lắk': 350,
+        'Đắk Nông': 420, 'Lâm Đồng': 500, 'Ninh Thuận': 560,
+        'Bình Thuận': 640, 'Hồ Chí Minh': 970, 'Bình Dương': 950,
+        'Đồng Nai': 980, 'Bà Rịa - Vũng Tàu': 1020, 'Tây Ninh': 1010,
+        'Bình Phước': 1000, 'Long An': 990, 'Tiền Giang': 1030,
+        'Bến Tre': 1060, 'Trà Vinh': 1080, 'Vĩnh Long': 1050,
+        'Đồng Tháp': 1060, 'An Giang': 1110, 'Kiên Giang': 1170,
+        'Cần Thơ': 1080, 'Hậu Giang': 1100, 'Sóc Trăng': 1120,
+        'Bạc Liêu': 1160, 'Cà Mau': 1220, 'Hà Nội': 764,
+        'Hải Phòng': 830, 'Hải Dương': 790, 'Hưng Yên': 770,
+        'Hà Nam': 730, 'Nam Định': 750, 'Thái Bình': 780,
+        'Ninh Bình': 700, 'Vĩnh Phúc': 780, 'Bắc Ninh': 800,
+        'Bắc Giang': 820, 'Thái Nguyên': 840, 'Phú Thọ': 800,
+        'Tuyên Quang': 860, 'Yên Bái': 900, 'Lào Cai': 960,
+        'Lai Châu': 1050, 'Điện Biên': 1030, 'Sơn La': 940,
+        'Hòa Bình': 760, 'Hà Giang': 950, 'Cao Bằng': 900,
+        'Bắc Kạn': 860, 'Lạng Sơn': 870, 'Quảng Ninh': 870,
     },
 };
 
@@ -47,18 +48,8 @@ const DEFAULT_CONFIG = {
 const readCache = () => {
     try {
         const saved = localStorage.getItem(CACHE_KEY);
-        if (!saved) return null;
-        const parsed = JSON.parse(saved);
-        const zones = {};
-        Object.entries(parsed.zones || {}).forEach(([k, v]) => { zones[Number(k)] = v; });
-        const provinceZoneMap = {};
-        Object.entries(parsed.provinceZoneMap || {}).forEach(([p, z]) => {
-            provinceZoneMap[p] = Number(z);
-        });
-        return { ...parsed, zones, provinceZoneMap };
-    } catch {
-        return null;
-    }
+        return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
 };
 
 const writeCache = (cfg) => {
@@ -67,6 +58,7 @@ const writeCache = (cfg) => {
 
 const getConfig = () => readCache() || DEFAULT_CONFIG;
 
+// ── Fetch config từ server ────────────────────────────────────────────────────
 export const fetchShippingConfig = async () => {
     try {
         const res = await fetch(API_URL);
@@ -82,32 +74,72 @@ export const fetchShippingConfig = async () => {
     return null;
 };
 
-export const getFreeShipThreshold = () => getConfig().freeShipThreshold;
-export const FREE_SHIP_THRESHOLD = DEFAULT_CONFIG.freeShipThreshold;
+// ── Tính phí ship theo km (phía client, offline) ──────────────────────────────
+// Logic giống backend: bậc thang lũy tiến
+export const calcFeeFromKm = (distanceKm, tiers, baseFee = 15000) => {
+    if (!tiers || tiers.length === 0) return baseFee;
+    const sorted = [...tiers].sort((a, b) => a.minKm - b.minKm);
+    let remaining = distanceKm;
+    let total = 0;
 
-export const getShippingZones = () => getConfig().zones;
-export const SHIPPING_ZONES = DEFAULT_CONFIG.zones;
-
-export const getProvinceZoneMap = () => getConfig().provinceZoneMap;
-export const PROVINCE_ZONE_MAP = DEFAULT_CONFIG.provinceZoneMap;
-
-export const getProvinceList = () => Object.keys(getConfig().provinceZoneMap).sort();
-export const PROVINCE_LIST = Object.keys(DEFAULT_CONFIG.provinceZoneMap).sort();
-
-export const calcShippingFee = (province, subtotal) => {
-    if (!province) {
-        return { fee: 0, originalFee: 0, isFree: false, zone: 0, zoneLabel: '' };
+    for (const tier of sorted) {
+        if (remaining <= 0) break;
+        const tierEnd = tier.maxKm !== null ? tier.maxKm : Infinity;
+        const tierLen = tierEnd - tier.minKm;
+        const kmInTier = Math.min(remaining, tierLen);
+        if (kmInTier > 0) {
+            total += kmInTier * tier.pricePerKm;
+            remaining -= kmInTier;
+        }
     }
+    return Math.max(Math.round(total / 1000) * 1000, baseFee);
+};
+
+// ── Hàm tính phí ship chính ───────────────────────────────────────────────────
+// Trả về: { fee, originalFee, isFree, distanceKm, breakdown }
+export const calcShippingFee = (province, subtotal = 0) => {
+    if (!province) {
+        return { fee: 0, originalFee: 0, isFree: false, distanceKm: 0, breakdown: [] };
+    }
+
     const cfg = getConfig();
+    const distanceKm = cfg.provinceDistanceMap?.[province] ?? 0;
     const isFree = subtotal >= cfg.freeShipThreshold;
-    const zone = cfg.provinceZoneMap[province] ?? 3;
-    const zoneInfo = cfg.zones[zone] ?? cfg.zones[3] ?? { label: 'Không xác định', fee: 35000 };
+    const originalFee = calcFeeFromKm(distanceKm, cfg.kmTiers, cfg.baseFee);
+
+    // Breakdown chi tiết
+    const sorted = [...(cfg.kmTiers || [])].sort((a, b) => a.minKm - b.minKm);
+    const breakdown = [];
+    let remaining = distanceKm;
+    for (const tier of sorted) {
+        if (remaining <= 0) break;
+        const tierEnd = tier.maxKm !== null ? tier.maxKm : Infinity;
+        const tierLen = tierEnd - tier.minKm;
+        const kmInTier = Math.min(remaining, tierLen);
+        if (kmInTier > 0) {
+            breakdown.push({
+                label: tier.label,
+                km: Math.round(kmInTier),
+                pricePerKm: tier.pricePerKm,
+                subtotal: Math.round(kmInTier * tier.pricePerKm),
+            });
+            remaining -= kmInTier;
+        }
+    }
 
     return {
-        fee: isFree ? 0 : zoneInfo.fee,
-        originalFee: zoneInfo.fee,
+        fee: isFree ? 0 : originalFee,
+        originalFee,
         isFree,
-        zone,
-        zoneLabel: zoneInfo.label,
+        distanceKm,
+        breakdown,
+        freeShipThreshold: cfg.freeShipThreshold,
     };
 };
+
+// ── Exports tiện ích ──────────────────────────────────────────────────────────
+export const getFreeShipThreshold = () => getConfig().freeShipThreshold;
+export const getProvinceList = () => Object.keys(getConfig().provinceDistanceMap || {}).sort((a, b) => a.localeCompare(b, 'vi'));
+export const getProvinceDistanceMap = () => getConfig().provinceDistanceMap || {};
+export const getKmTiers = () => getConfig().kmTiers || [];
+export const getBaseFee = () => getConfig().baseFee || 15000;
