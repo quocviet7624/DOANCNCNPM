@@ -1,11 +1,12 @@
 const router = require('express').Router();
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const { forgotPassword, verifyOTP, resetPassword } = require('../controllers/authController'); // ← Thêm dòng này
+const User   = require('../models/User');
+const jwt    = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const { forgotPassword, verifyOTP, resetPassword } = require('../controllers/authController');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fc-junior-aquarium-super-secret-key-2024';
 
-// ── Helper: xác thực token & kiểm tra quyền admin ──
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const verifyAdmin = (req) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) throw { status: 401, message: 'Chưa đăng nhập!' };
@@ -34,6 +35,7 @@ const handleErr = (res, err) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
 };
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
 // POST - Đăng ký
 router.post('/register', async (req, res) => {
@@ -144,18 +146,148 @@ router.put('/change-password', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
-// ── Quên mật khẩu ─────────────────────────────────────────────────
-// POST - Gửi OTP về email
+// ── Quên mật khẩu ────────────────────────────────────────────────────────────
 router.post('/forgot-password', forgotPassword);
+router.post('/verify-otp',      verifyOTP);
+router.post('/reset-password',  resetPassword);
 
-// POST - Xác minh OTP
-router.post('/verify-otp', verifyOTP);
+// ── Địa chỉ giao hàng (lưu vào MongoDB) ──────────────────────────────────────
 
-// POST - Đặt lại mật khẩu mới
-router.post('/reset-password', resetPassword);
-// ──────────────────────────────────────────────────────────────────
+// GET /auth/addresses — Lấy danh sách địa chỉ
+router.get('/addresses', async (req, res) => {
+    try {
+        const decoded = verifyToken(req);
+        const user = await User.findById(decoded.id).select('addresses defaultAddressId').lean();
+        if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
 
-// GET - Danh sách tất cả users (chỉ admin)
+        res.json({
+            addresses: user.addresses || [],
+            defaultAddressId: user.defaultAddressId || null,
+        });
+    } catch (err) { handleErr(res, err); }
+});
+
+// POST /auth/addresses — Thêm địa chỉ mới
+router.post('/addresses', async (req, res) => {
+    try {
+        const decoded = verifyToken(req);
+        const { name, phone, city, detail } = req.body;
+
+        if (!name || !phone || !city || !detail) {
+            return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin địa chỉ!' });
+        }
+
+        // Kiểm tra số lượng trước
+        const user = await User.findById(decoded.id).select('addresses defaultAddressId').lean();
+        if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
+
+        const currentLen = (user.addresses || []).length;
+        if (currentLen >= 5) {
+            return res.status(400).json({ message: 'Tối đa 5 địa chỉ. Xóa bớt để thêm mới!' });
+        }
+
+        const newAddr = { _id: new mongoose.Types.ObjectId(), name, phone, city, detail };
+
+        // Dùng $push để ghi thẳng vào DB
+        const update = { $push: { addresses: newAddr } };
+
+        // Nếu là địa chỉ đầu tiên → set default luôn
+        if (currentLen === 0) {
+            update.$set = { defaultAddressId: newAddr._id.toString() };
+        }
+
+        await User.findByIdAndUpdate(decoded.id, update, { new: true });
+
+        // Lấy defaultAddressId sau update
+        const defaultAddressId = currentLen === 0
+            ? newAddr._id.toString()
+            : (user.defaultAddressId || null);
+
+        console.log('✅ Thêm địa chỉ:', decoded.username, '|', name);
+        res.status(201).json({
+            message: 'Đã thêm địa chỉ mới!',
+            address: newAddr,
+            defaultAddressId,
+        });
+    } catch (err) { handleErr(res, err); }
+});
+
+// PUT /auth/addresses/:addrId — Sửa địa chỉ
+router.put('/addresses/:addrId', async (req, res) => {
+    try {
+        const decoded = verifyToken(req);
+        const { name, phone, city, detail } = req.body;
+        const addrId = req.params.addrId;
+
+        // Dùng positional operator $ để update đúng subdocument
+        const result = await User.findOneAndUpdate(
+            { _id: decoded.id, 'addresses._id': new mongoose.Types.ObjectId(addrId) },
+            {
+                $set: {
+                    'addresses.$.name':   name,
+                    'addresses.$.phone':  phone,
+                    'addresses.$.city':   city,
+                    'addresses.$.detail': detail,
+                }
+            },
+            { new: true }
+        ).select('addresses').lean();
+
+        if (!result) return res.status(404).json({ message: 'Không tìm thấy địa chỉ!' });
+
+        const updated = result.addresses.find(a => a._id.toString() === addrId);
+        console.log('✅ Sửa địa chỉ:', decoded.username, '|', addrId);
+        res.json({ message: 'Đã cập nhật địa chỉ!', address: updated });
+    } catch (err) { handleErr(res, err); }
+});
+
+// DELETE /auth/addresses/:addrId — Xóa địa chỉ
+router.delete('/addresses/:addrId', async (req, res) => {
+    try {
+        const decoded = verifyToken(req);
+        const addrId  = req.params.addrId;
+
+        const user = await User.findById(decoded.id).select('addresses defaultAddressId').lean();
+        if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
+
+        if ((user.defaultAddressId || '') === addrId) {
+            return res.status(400).json({ message: 'Không thể xóa địa chỉ mặc định!' });
+        }
+
+        const exists = (user.addresses || []).some(a => a._id.toString() === addrId);
+        if (!exists) return res.status(404).json({ message: 'Không tìm thấy địa chỉ!' });
+
+        await User.findByIdAndUpdate(decoded.id, {
+            $pull: { addresses: { _id: new mongoose.Types.ObjectId(addrId) } }
+        });
+
+        console.log('✅ Xóa địa chỉ:', decoded.username, '|', addrId);
+        res.json({ message: 'Đã xóa địa chỉ!' });
+    } catch (err) { handleErr(res, err); }
+});
+
+// PUT /auth/addresses/:addrId/set-default — Đặt địa chỉ mặc định
+router.put('/addresses/:addrId/set-default', async (req, res) => {
+    try {
+        const decoded = verifyToken(req);
+        const addrId  = req.params.addrId;
+
+        const user = await User.findById(decoded.id).select('addresses').lean();
+        if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
+
+        const exists = (user.addresses || []).some(a => a._id.toString() === addrId);
+        if (!exists) return res.status(404).json({ message: 'Không tìm thấy địa chỉ!' });
+
+        await User.findByIdAndUpdate(decoded.id, { $set: { defaultAddressId: addrId } });
+
+        console.log('✅ Đặt mặc định:', decoded.username, '|', addrId);
+        res.json({ message: 'Đã đặt địa chỉ mặc định!', defaultAddressId: addrId });
+    } catch (err) { handleErr(res, err); }
+});
+
+// ── Quản lý users (admin) ─────────────────────────────────────────────────────
+
+// GET - Danh sách tất cả users
 router.get('/users', async (req, res) => {
     try {
         verifyAdmin(req);
@@ -168,7 +300,6 @@ router.get('/users', async (req, res) => {
 router.put('/users/:id/toggle-status', async (req, res) => {
     try {
         verifyAdmin(req);
-
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
 
@@ -180,7 +311,7 @@ router.put('/users/:id/toggle-status', async (req, res) => {
     } catch (err) { handleErr(res, err); }
 });
 
-// PUT - Đổi vai trò (customer / staff / admin)
+// PUT - Đổi vai trò
 router.put('/users/:id/change-role', async (req, res) => {
     try {
         const decoded = verifyAdmin(req);
@@ -195,12 +326,7 @@ router.put('/users/:id/change-role', async (req, res) => {
             return res.status(403).json({ message: 'Không thể đổi vai trò của chính mình!' });
         }
 
-        const updated = await User.findByIdAndUpdate(
-            req.params.id,
-            { role },
-            { new: true }
-        ).select('-password');
-
+        const updated = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password');
         if (!updated) return res.status(404).json({ message: 'Không tìm thấy user!' });
 
         console.log('✅ Đổi role:', updated.username, '→', role);

@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const AddressSchema = new mongoose.Schema({
+    name:   { type: String, required: true },
+    phone:  { type: String, required: true },
+    city:   { type: String, required: true },
+    detail: { type: String, required: true },
+});
+// Mongoose tự tạo _id cho mỗi subdocument
+
 const UserSchema = new mongoose.Schema({
     username: {
         type: String,
@@ -22,32 +30,21 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['customer', 'staff', 'admin'],  // ← thêm staff
+        enum: ['customer', 'staff', 'admin'],
         default: 'customer'
     },
-    fullName: {
-        type: String,
-        default: ''
-    },
-    phone: {
-        type: String,
-        default: ''
-    },
-    address: {
-        street:   { type: String, default: '' },
-        city:     { type: String, default: '' },
-        district: { type: String, default: '' },
-        ward:     { type: String, default: '' }
-    },
-    isActive: {
-        type: Boolean,
-        default: true
-    },
+    fullName: { type: String, default: '' },
+    phone:    { type: String, default: '' },
+    address:  { type: String, default: '' },   // địa chỉ text trên profile
+    isActive: { type: Boolean, default: true },
+
+    // ── Danh sách địa chỉ giao hàng ──────────────────────────────────────────
+    addresses: { type: [AddressSchema], default: [] },
+    defaultAddressId: { type: String, default: null },
+
     resetOTP:        { type: String, default: null },
     resetOTPExpires: { type: Date,   default: null },
-}, {
-    timestamps: true
-});
+}, { timestamps: true });
 
 UserSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();
@@ -55,9 +52,7 @@ UserSchema.pre('save', async function (next) {
         const salt = await bcrypt.genSalt(10);
         this.password = await bcrypt.hash(this.password, salt);
         next();
-    } catch (err) {
-        next(err);
-    }
+    } catch (err) { next(err); }
 });
 
 UserSchema.methods.comparePassword = async function (candidatePassword) {

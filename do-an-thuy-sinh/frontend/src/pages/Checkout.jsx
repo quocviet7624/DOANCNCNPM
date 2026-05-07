@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
     Row, Col, Card, Radio, Button, Input, Form,
@@ -15,137 +15,150 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
-const RED = '#c8232c';
+const RED   = '#c8232c';
 const GREEN = '#52c41a';
-const BLUE = '#1890ff';
+const BLUE  = '#1890ff';
+const API   = 'http://localhost:5000/api';
 
-const SHIPPING_API = 'http://localhost:5000/api/shipping/config';
+const getToken   = () => localStorage.getItem('token');
+const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
 
-// ─── Helper: đọc/ghi địa chỉ dùng chung với UserProfile ─────────────────────
-const loadAddresses = () => {
-    try {
-        const list = JSON.parse(localStorage.getItem('addresses') || '[]');
-        const defId = localStorage.getItem('defaultAddressId');
-        return { list, defaultId: defId || list[0]?.id || null };
-    } catch { return { list: [], defaultId: null }; }
-};
-
-const saveAddresses = (list, defaultId) => {
-    localStorage.setItem('addresses', JSON.stringify(list));
-    if (defaultId !== undefined && defaultId !== null)
-        localStorage.setItem('defaultAddressId', defaultId);
-};
-
-// ─── Tính phí ship từ config do admin cài đặt (theo km) ─────────────────────
+// ─── Tính phí ship client-side fallback ──────────────────────────────────────
 const calcFeeFromKm = (distanceKm, tiers, baseFee) => {
     if (!tiers || tiers.length === 0) return baseFee || 0;
     const sorted = [...tiers].sort((a, b) => a.minKm - b.minKm);
-    let remaining = distanceKm;
-    let total = 0;
+    let remaining = distanceKm, total = 0;
     for (const tier of sorted) {
         if (remaining <= 0) break;
-        const tierEnd = (tier.maxKm !== null && tier.maxKm !== undefined) ? tier.maxKm : Infinity;
-        const tierLen = tierEnd - tier.minKm;
-        const kmInTier = Math.min(remaining, tierLen);
+        const tierEnd = (tier.maxKm != null) ? tier.maxKm : Infinity;
+        const kmInTier = Math.min(remaining, tierEnd - tier.minKm);
         if (kmInTier > 0) { total += kmInTier * tier.pricePerKm; remaining -= kmInTier; }
     }
     return Math.max(Math.round(total / 1000) * 1000, baseFee || 0);
 };
 
-const calcShippingFee = (province, subtotal, shippingConfig) => {
-    if (!shippingConfig || !province) return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
-
-    const { freeShipThreshold, kmTiers, baseFee, provinceDistanceMap } = shippingConfig;
-
-    // Guard: nếu API chưa trả về đủ dữ liệu
-    if (!provinceDistanceMap) return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
-
-    const distanceKm = provinceDistanceMap[province];
-    if (distanceKm === undefined) return { fee: 0, isFree: false, zoneLabel: 'Không xác định', originalFee: 0 };
-
-    const originalFee = calcFeeFromKm(distanceKm, kmTiers, baseFee);
-    const zoneLabel = distanceKm + ' km';
-
-    if (subtotal >= freeShipThreshold) {
-        return { fee: 0, isFree: true, zoneLabel, originalFee };
-    }
-    return { fee: originalFee, isFree: false, zoneLabel, originalFee };
+const calcShippingFee = (province, subtotal, cfg) => {
+    if (!cfg || !province || !cfg.provinceDistanceMap)
+        return { fee: 0, isFree: false, zoneLabel: '', originalFee: 0 };
+    const distanceKm = cfg.provinceDistanceMap[province];
+    if (distanceKm === undefined)
+        return { fee: 0, isFree: false, zoneLabel: 'Không xác định', originalFee: 0 };
+    const originalFee = calcFeeFromKm(distanceKm, cfg.kmTiers, cfg.baseFee);
+    if (subtotal >= cfg.freeShipThreshold)
+        return { fee: 0, isFree: true, zoneLabel: distanceKm + ' km', originalFee };
+    return { fee: originalFee, isFree: false, zoneLabel: distanceKm + ' km', originalFee };
 };
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ─── AddressFormFields (dùng lại ở modal thêm / sửa) ─────────────────────────
+const AddressFormFields = ({ provinceList, loading }) => (
+    <>
+        <Row gutter={16}>
+            <Col span={12}>
+                <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên!' }]}>
+                    <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
+                </Form.Item>
+            </Col>
+            <Col span={12}>
+                <Form.Item name="phone" label="Số điện thoại"
+                    rules={[{ required: true, message: 'Nhập SĐT!' }, { pattern: /^[0-9]{9,11}$/, message: 'SĐT không hợp lệ!' }]}>
+                    <Input prefix={<PhoneOutlined />} placeholder="0852..." />
+                </Form.Item>
+            </Col>
+        </Row>
+        <Form.Item name="city" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành!' }]}>
+            <Select showSearch placeholder={loading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
+                loading={loading} options={provinceList.map(p => ({ value: p, label: p }))}
+                filterOption={(input, opt) => opt.label.toLowerCase().includes(input.toLowerCase())} />
+        </Form.Item>
+        <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ!' }]}>
+            <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
+        </Form.Item>
+    </>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 const Checkout = () => {
     const navigate = useNavigate();
-    const [cartItems, setCartItems] = useState([]);
-    const [userInfo, setUserInfo] = useState(null);
-    const [savedAddresses, setSavedAddresses] = useState([]);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
-    const [isAddingNew, setIsAddingNew] = useState(false);
-    const [addForm] = Form.useForm();
-    const [isEditing, setIsEditing] = useState(false);
-    const [editingAddress, setEditingAddress] = useState(null);
-    const [editForm] = Form.useForm();
-    const [paymentMethod, setPaymentMethod] = useState('cod');
-    const [isProcessing, setIsProcessing] = useState(false);
 
-    // PayPal modal
+    // ── Cart / User ───────────────────────────────────────────────────────────
+    const [cartItems,  setCartItems]  = useState([]);
+    const [userInfo,   setUserInfo]   = useState(null);
+
+    // ── Địa chỉ từ API ────────────────────────────────────────────────────────
+    const [savedAddresses,   setSavedAddresses]   = useState([]);
+    const [defaultAddressId, setDefaultAddressId] = useState(null);
+    const [selectedAddressId, setSelectedAddressId] = useState(null);
+    const [addrLoading,      setAddrLoading]      = useState(true);
+
+    // ── Form thêm / sửa ───────────────────────────────────────────────────────
+    const [isAddingNew,    setIsAddingNew]    = useState(false);
+    const [addSaving,      setAddSaving]      = useState(false);
+    const [addForm]  = Form.useForm();
+
+    const [isEditing,      setIsEditing]      = useState(false);
+    const [editingAddress, setEditingAddress] = useState(null);
+    const [editSaving,     setEditSaving]     = useState(false);
+    const [editForm] = Form.useForm();
+
+    // ── Thanh toán ────────────────────────────────────────────────────────────
+    const [paymentMethod, setPaymentMethod] = useState('cod');
+    const [isProcessing,  setIsProcessing]  = useState(false);
+
+    // ── PayPal ────────────────────────────────────────────────────────────────
     const [paypalModalOpen, setPaypalModalOpen] = useState(false);
-    const [paypalStep, setPaypalStep] = useState('form');
+    const [paypalStep,      setPaypalStep]      = useState('form');
     const [paypalForm] = Form.useForm();
 
-    // VNPay
-    const [vnpayLoading, setVnpayLoading] = useState(false);
-
-    // Voucher
-    const [voucherCode, setVoucherCode] = useState('');
+    // ── Voucher ───────────────────────────────────────────────────────────────
+    const [voucherCode,    setVoucherCode]    = useState('');
     const [voucherLoading, setVoucherLoading] = useState(false);
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
-    // Shipping
-    const [selectedProvince, setSelectedProvince] = useState('');
-
-    // ── Shipping config từ API ───────────────────────────────────────────────
-    const [shippingConfig, setShippingConfig] = useState(null);
+    // ── Shipping ──────────────────────────────────────────────────────────────
+    const [selectedProvince,    setSelectedProvince]    = useState('');
+    const [shippingConfig,      setShippingConfig]      = useState(null);
     const [shippingConfigLoading, setShippingConfigLoading] = useState(true);
+    const [shippingInfo,        setShippingInfo]        = useState({ fee: 0, isFree: false, zoneLabel: '', originalFee: 0 });
+    const [shippingFeeLoading,  setShippingFeeLoading]  = useState(false);
 
-    // ── Shipping fee tính từ API (luôn đồng bộ với backend) ─────────────────
-    const [shippingInfo, setShippingInfo] = useState({ fee: 0, isFree: false, zoneLabel: '', originalFee: 0 });
-    const [shippingFeeLoading, setShippingFeeLoading] = useState(false);
-
-    // ── Load shipping config từ server (admin quản lý) ──────────────────────
+    // ── Load shipping config ──────────────────────────────────────────────────
     useEffect(() => {
-        const fetchShippingConfig = async () => {
+        const fetch = async () => {
             setShippingConfigLoading(true);
             try {
-                // Ưu tiên dùng cache localStorage nếu có, để tránh chờ quá lâu
                 const cached = localStorage.getItem('ShippingConfig_v2');
-                if (cached) {
-                    try { setShippingConfig(JSON.parse(cached)); } catch { }
-                }
-                // Luôn fetch mới nhất từ server để đảm bảo đúng config admin đã cài
-                const res = await axios.get(SHIPPING_API);
+                if (cached) { try { setShippingConfig(JSON.parse(cached)); } catch { } }
+                const res = await axios.get(`${API}/shipping/config`);
                 if (res.data.success) {
                     setShippingConfig(res.data.data);
                     localStorage.setItem('ShippingConfig_v2', JSON.stringify(res.data.data));
                 }
-            } catch (err) {
-                console.error('Không thể tải config phí ship:', err);
-                message.warning('Không thể tải phí ship từ server. Vui lòng thử lại!');
-            } finally {
-                setShippingConfigLoading(false);
-            }
+            } catch { message.warning('Không thể tải phí ship từ server!'); }
+            finally { setShippingConfigLoading(false); }
         };
-
-        fetchShippingConfig();
-
-        // Lắng nghe khi admin thay đổi config (cùng tab hoặc tab khác)
-        const onConfigChange = () => {
-            fetchShippingConfig();
-        };
-        window.addEventListener('shippingConfigChange', onConfigChange);
-        return () => window.removeEventListener('shippingConfigChange', onConfigChange);
+        fetch();
+        window.addEventListener('shippingConfigChange', fetch);
+        return () => window.removeEventListener('shippingConfigChange', fetch);
     }, []);
 
-    // ── KHỞI TẠO DỮ LIỆU ────────────────────────────────────────────────────
+    // ── Load địa chỉ từ API ───────────────────────────────────────────────────
+    const fetchAddresses = useCallback(async () => {
+        setAddrLoading(true);
+        try {
+            const { data } = await axios.get(`${API}/auth/addresses`, { headers: authHeaders() });
+            const list  = data.addresses || [];
+            const defId = data.defaultAddressId || list[0]?._id || null;
+            setSavedAddresses(list);
+            setDefaultAddressId(defId);
+            setSelectedAddressId(defId);
+            const def = list.find(a => a._id === defId);
+            if (def?.city) setSelectedProvince(def.city);
+            if (list.length === 0) setIsAddingNew(true);
+        } catch { message.error('Không thể tải danh sách địa chỉ!'); }
+        finally { setAddrLoading(false); }
+    }, []);
+
+    // ── Init ──────────────────────────────────────────────────────────────────
     useEffect(() => {
         const cart = JSON.parse(localStorage.getItem('cart') || '[]');
         if (cart.length === 0) { message.warning('Giỏ hàng trống!'); navigate('/products'); return; }
@@ -153,43 +166,22 @@ const Checkout = () => {
 
         const userStr = localStorage.getItem('user');
         if (!userStr) { navigate('/login'); return; }
-        const user = JSON.parse(userStr);
-        setUserInfo(user);
+        setUserInfo(JSON.parse(userStr));
 
-        const { list, defaultId } = loadAddresses();
-
-        if (list.length === 0 && user.address) {
-            const migrated = [{
-                id: Date.now().toString(),
-                name: user.fullName || user.username || 'Tôi',
-                phone: user.phone || '',
-                detail: user.address,
-                city: user.city || user.province || '',
-            }];
-            saveAddresses(migrated, migrated[0].id);
-            setSavedAddresses(migrated);
-            setSelectedAddressId(migrated[0].id);
-            setSelectedProvince(migrated[0].city || '');
-        } else {
-            setSavedAddresses(list);
-            setSelectedAddressId(defaultId);
-            const def = list.find(a => a.id === defaultId);
-            if (def?.city) setSelectedProvince(def.city);
-        }
-
-        if (list.length === 0 && !user.address) setIsAddingNew(true);
+        fetchAddresses();
 
         const savedVoucher = localStorage.getItem('appliedVoucher');
         if (savedVoucher) { try { setAppliedVoucher(JSON.parse(savedVoucher)); } catch { } }
-    }, [navigate]);
+    }, [navigate, fetchAddresses]);
 
+    // ── Sync province khi đổi địa chỉ chọn ──────────────────────────────────
     useEffect(() => {
         if (!selectedAddressId) return;
-        const addr = savedAddresses.find(a => a.id === selectedAddressId);
+        const addr = savedAddresses.find(a => a._id === selectedAddressId);
         setSelectedProvince(addr?.city || '');
     }, [selectedAddressId, savedAddresses]);
 
-    // ── Tính phí ship qua API backend (luôn dùng config mới nhất) ────────────
+    // ── Tính phí ship ─────────────────────────────────────────────────────────
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
 
     useEffect(() => {
@@ -197,113 +189,107 @@ const Checkout = () => {
             setShippingInfo({ fee: 0, isFree: false, zoneLabel: '', originalFee: 0 });
             return;
         }
-        const fetchFee = async () => {
+        const calc = async () => {
             setShippingFeeLoading(true);
             try {
-                const res = await axios.post('http://localhost:5000/api/shipping/calculate', {
-                    province: selectedProvince,
-                    subtotal,
-                });
+                const res = await axios.post(`${API}/shipping/calculate`, { province: selectedProvince, subtotal });
                 if (res.data.success) {
                     const { fee, originalFee, isFree, distanceKm } = res.data.data;
-                    setShippingInfo({
-                        fee,
-                        isFree,
-                        originalFee,
-                        zoneLabel: distanceKm + ' km',
-                    });
+                    setShippingInfo({ fee, isFree, originalFee, zoneLabel: distanceKm + ' km' });
                 }
-            } catch (err) {
-                console.error('Không thể tính phí ship:', err);
-                // fallback client-side nếu API lỗi
-                const fallback = calcShippingFee(selectedProvince, subtotal, shippingConfig);
-                setShippingInfo(fallback);
-            } finally {
-                setShippingFeeLoading(false);
-            }
+            } catch {
+                setShippingInfo(calcShippingFee(selectedProvince, subtotal, shippingConfig));
+            } finally { setShippingFeeLoading(false); }
         };
-        fetchFee();
+        calc();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedProvince, subtotal]);
 
-    // ── TÍNH TIỀN ────────────────────────────────────────────────────────────
+    // ── Tính tiền ─────────────────────────────────────────────────────────────
     const discountAmount = appliedVoucher?.discountAmount || 0;
-    const shippingFee = shippingInfo.fee;
-    const finalTotal = subtotal - discountAmount + shippingFee;
+    const shippingFee    = shippingInfo.fee;
+    const finalTotal     = subtotal - discountAmount + shippingFee;
 
-    // ── QUẢN LÝ ĐỊA CHỈ ─────────────────────────────────────────────────────
-    const persistAddresses = (newList, defaultId) => {
-        saveAddresses(newList, defaultId);
-        setSavedAddresses(newList);
+    // ── Thêm địa chỉ mới ─────────────────────────────────────────────────────
+    const handleAddNewAddress = async (values) => {
+        setAddSaving(true);
+        try {
+            const { data } = await axios.post(`${API}/auth/addresses`, values, { headers: authHeaders() });
+            const newAddr = data.address;
+            setSavedAddresses(prev => [...prev, newAddr]);
+            if (data.defaultAddressId) setDefaultAddressId(data.defaultAddressId);
+            setSelectedAddressId(newAddr._id);
+            setSelectedProvince(newAddr.city || '');
+            setIsAddingNew(false);
+            addForm.resetFields();
+            message.success('Đã thêm địa chỉ mới!');
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Thêm địa chỉ thất bại!');
+        } finally { setAddSaving(false); }
     };
 
-    const handleAddNewAddress = (values) => {
-        const newAddr = {
-            id: Date.now().toString(),
-            name: values.name,
-            phone: values.phone,
-            detail: values.detail,
-            city: values.province || '',
-        };
-        const newList = [...savedAddresses, newAddr];
-        const newDefId = newList.length === 1 ? newAddr.id : localStorage.getItem('defaultAddressId');
-        persistAddresses(newList, newDefId);
-        setSelectedAddressId(newAddr.id);
-        setSelectedProvince(newAddr.city);
-        setIsAddingNew(false);
-        addForm.resetFields();
-        message.success('Đã thêm địa chỉ mới!');
-    };
-
-    const handleDeleteAddress = (e, id) => {
+    // ── Sửa địa chỉ ──────────────────────────────────────────────────────────
+    const openEditModal = (e, addr) => {
         e.stopPropagation();
-        const newList = savedAddresses.filter(a => a.id !== id);
-        const currentDefId = localStorage.getItem('defaultAddressId');
-        const newDefId = id === currentDefId ? (newList[0]?.id || null) : currentDefId;
-        persistAddresses(newList, newDefId);
-        message.success('Đã xóa địa chỉ!');
-        if (id === selectedAddressId) {
-            const next = newList[0] || null;
-            setSelectedAddressId(next?.id || null);
-            setSelectedProvince(next?.city || '');
-            if (!next) setIsAddingNew(true);
-        }
-    };
-
-    const openEditModal = (e, address) => {
-        e.stopPropagation();
-        setEditingAddress(address);
-        editForm.setFieldsValue({
-            name: address.name,
-            phone: address.phone,
-            detail: address.detail,
-            province: address.city || '',
-        });
+        setEditingAddress(addr);
+        editForm.setFieldsValue({ name: addr.name, phone: addr.phone, city: addr.city, detail: addr.detail });
         setIsEditing(true);
     };
 
-    const handleUpdateAddress = () => {
-        editForm.validateFields().then(values => {
-            const newList = savedAddresses.map(a =>
-                a.id === editingAddress.id
-                    ? { ...a, name: values.name, phone: values.phone, detail: values.detail, city: values.province || '' }
-                    : a
+    const handleUpdateAddress = async () => {
+        try {
+            const values = await editForm.validateFields();
+            setEditSaving(true);
+            const { data } = await axios.put(
+                `${API}/auth/addresses/${editingAddress._id}`, values, { headers: authHeaders() }
             );
-            persistAddresses(newList, localStorage.getItem('defaultAddressId'));
-            if (editingAddress.id === selectedAddressId) setSelectedProvince(values.province || '');
+            setSavedAddresses(prev => prev.map(a => a._id === editingAddress._id ? data.address : a));
+            if (editingAddress._id === selectedAddressId) setSelectedProvince(values.city || '');
             setIsEditing(false);
             setEditingAddress(null);
             message.success('Cập nhật địa chỉ thành công!');
-        });
+        } catch (err) {
+            if (err?.response) message.error(err.response?.data?.message || 'Cập nhật thất bại!');
+        } finally { setEditSaving(false); }
     };
 
-    // ── VOUCHER ──────────────────────────────────────────────────────────────
+    // ── Xóa địa chỉ ──────────────────────────────────────────────────────────
+    const handleDeleteAddress = async (e, addrId) => {
+        e.stopPropagation();
+        try {
+            await axios.delete(`${API}/auth/addresses/${addrId}`, { headers: authHeaders() });
+            const newList = savedAddresses.filter(a => a._id !== addrId);
+            setSavedAddresses(newList);
+            if (addrId === selectedAddressId) {
+                const next = newList[0] || null;
+                setSelectedAddressId(next?._id || null);
+                setSelectedProvince(next?.city || '');
+                if (!next) setIsAddingNew(true);
+            }
+            message.success('Đã xóa địa chỉ!');
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Không thể xóa địa chỉ này!');
+        }
+    };
+
+    // ── Đặt mặc định ─────────────────────────────────────────────────────────
+    const handleSetDefault = async (addrId) => {
+        try {
+            await axios.put(`${API}/auth/addresses/${addrId}/set-default`, {}, { headers: authHeaders() });
+            setDefaultAddressId(addrId);
+            message.success('Đã đặt địa chỉ mặc định!');
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Thao tác thất bại!');
+        }
+    };
+
+    // ── Voucher ───────────────────────────────────────────────────────────────
     const handleApplyVoucher = async () => {
         const trimmed = voucherCode.trim().toUpperCase();
         if (!trimmed) return message.warning('Vui lòng nhập mã voucher!');
         setVoucherLoading(true);
         try {
-            const res = await axios.post('http://localhost:5000/api/vouchers/apply', {
+            const res = await axios.post(`${API}/vouchers/apply`, {
                 code: trimmed,
                 cartItems: cartItems.map(i => ({ category: i.category, price: i.price, quantity: i.quantity })),
                 orderTotal: subtotal,
@@ -314,9 +300,7 @@ const Checkout = () => {
             message.success(`Áp dụng thành công! Giảm ${res.data.discountAmount.toLocaleString('vi-VN')}đ`);
         } catch (err) {
             message.error(err.response?.data?.message || 'Mã voucher không hợp lệ!');
-        } finally {
-            setVoucherLoading(false);
-        }
+        } finally { setVoucherLoading(false); }
     };
 
     const handleRemoveVoucher = () => {
@@ -325,39 +309,39 @@ const Checkout = () => {
         localStorage.removeItem('appliedVoucher');
     };
 
-    // ── ĐẶT HÀNG ────────────────────────────────────────────────────────────
+    // ── Đặt hàng ─────────────────────────────────────────────────────────────
     const submitOrder = async (extraData = {}) => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
+        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
 
         setIsProcessing(true);
-        const addr = savedAddresses.find(a => a.id === selectedAddressId);
+        const addr   = savedAddresses.find(a => a._id === selectedAddressId);
         const isPaid = paymentMethod === 'paypal';
 
         const orderData = {
-            userId: userInfo._id || userInfo.id,
-            customerName: addr.name,
-            phone: addr.phone,
-            address: addr.detail,
-            province: selectedProvince,
-            items: cartItems,
-            subtotalAmount: subtotal,
+            userId:          userInfo._id || userInfo.id,
+            customerName:    addr.name,
+            phone:           addr.phone,
+            address:         addr.detail,
+            province:        selectedProvince,
+            items:           cartItems,
+            subtotalAmount:  subtotal,
             discountAmount,
             shippingFee,
-            totalAmount: finalTotal,
-            voucherCode: appliedVoucher?.code || null,
-            paymentMethod: isPaid ? 'PayPal' : 'COD',
+            totalAmount:     finalTotal,
+            voucherCode:     appliedVoucher?.code || null,
+            paymentMethod:   isPaid ? 'PayPal' : 'COD',
             isPaid,
-            status: 'Chờ xác nhận',
+            status:          'Chờ xác nhận',
             ...extraData,
         };
 
         try {
-            const res = await axios.post('http://localhost:5000/api/orders/checkout', orderData);
+            const res = await axios.post(`${API}/orders/checkout`, orderData);
             const savedOrder = res.data.order;
 
             if (appliedVoucher?.code) {
-                try { await axios.post(`http://localhost:5000/api/vouchers/confirm-use/${appliedVoucher.code}`); } catch { }
+                try { await axios.post(`${API}/vouchers/confirm-use/${appliedVoucher.code}`); } catch { }
             }
 
             const newOrderLocal = {
@@ -368,15 +352,15 @@ const Checkout = () => {
                 discountAmount,
                 shippingFee,
                 totalAmount: finalTotal,
-                voucherCode: appliedVoucher?.code || null,
-                orderDate: new Date().toLocaleString('vi-VN'),
-                status: 'pending',
+                voucherCode:   appliedVoucher?.code || null,
+                orderDate:     new Date().toLocaleString('vi-VN'),
+                status:        'pending',
                 isPaid,
                 paymentMethod: isPaid ? 'PayPal' : 'COD',
-                customerName: addr.name,
-                phone: addr.phone,
-                address: addr.detail,
-                province: selectedProvince,
+                customerName:  addr.name,
+                phone:         addr.phone,
+                address:       addr.detail,
+                province:      selectedProvince,
             };
             const history = JSON.parse(localStorage.getItem('orderHistory') || '[]');
             history.unshift(newOrderLocal);
@@ -393,66 +377,16 @@ const Checkout = () => {
         } catch (err) {
             console.error(err);
             message.error('Đặt hàng thất bại! Vui lòng thử lại.');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    // ── XỬ LÝ THANH TOÁN VNPAY ──────────────────────────────────────────────
-    const handleVNPayPayment = async () => {
-        if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
-
-        setVnpayLoading(true);
-        try {
-            const addr = savedAddresses.find(a => a.id === selectedAddressId);
-            const orderId = 'FCJR' + Date.now().toString().slice(-8);
-
-            const pendingOrder = {
-                userId: userInfo._id || userInfo.id,
-                customerName: addr.name,
-                phone: addr.phone,
-                address: addr.detail,
-                province: selectedProvince,
-                items: cartItems,
-                subtotalAmount: subtotal,
-                discountAmount,
-                shippingFee,
-                totalAmount: finalTotal,
-                voucherCode: appliedVoucher?.code || null,
-                paymentMethod: 'VNPay',
-                isPaid: false,
-                status: 'Chờ xác nhận',
-                vnpayOrderId: orderId,
-            };
-            localStorage.setItem('pendingVNPayOrder', JSON.stringify(pendingOrder));
-
-            const res = await axios.post('http://localhost:5000/api/vnpay/create-payment', {
-                amount: finalTotal,
-                orderInfo: `Thanh toan don hang FC Junior`,
-                orderId: orderId,
-            });
-
-            window.location.href = res.data.paymentUrl;
-
-        } catch (err) {
-            console.error('VNPay error:', err);
-            message.error('Không thể kết nối VNPay. Vui lòng thử lại!');
-        } finally {
-            setVnpayLoading(false);
-        }
+        } finally { setIsProcessing(false); }
     };
 
     const handlePlaceOrder = () => {
         if (!selectedAddressId) return message.error('Vui lòng chọn địa chỉ giao hàng!');
-        if (!selectedProvince) return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
-
+        if (!selectedProvince)  return message.error('Vui lòng chọn tỉnh/thành phố để tính phí ship!');
         if (paymentMethod === 'paypal') {
             setPaypalStep('form');
             paypalForm.resetFields();
             setPaypalModalOpen(true);
-        } else if (paymentMethod === 'vnpay') {
-            handleVNPayPayment();
         } else {
             submitOrder();
         }
@@ -472,60 +406,48 @@ const Checkout = () => {
         submitOrder();
     };
 
-    // ── Màu nút ──────────────────────────────────────────────────────────────
-    const getButtonStyle = () => {
-        if (paymentMethod === 'paypal') return { background: '#003087', borderColor: '#003087' };
-        if (paymentMethod === 'vnpay') return { background: '#e30019', borderColor: '#e30019' };
-        return { background: RED, borderColor: RED };
-    };
+    // ── Helpers giao diện ─────────────────────────────────────────────────────
+    const getButtonStyle = () =>
+        paymentMethod === 'paypal'
+            ? { background: '#003087', borderColor: '#003087' }
+            : { background: RED, borderColor: RED };
 
-    const getButtonText = () => {
-        if (paymentMethod === 'paypal') return 'Pay with PayPal';
-        if (paymentMethod === 'vnpay') return 'Thanh toán qua VNPay';
-        return 'ĐẶT HÀNG NGAY';
-    };
+    const getButtonText = () =>
+        paymentMethod === 'paypal' ? 'Pay with PayPal' : 'ĐẶT HÀNG NGAY';
 
-    // ── Province list từ shippingConfig ──────────────────────────────────────
     const provinceList = shippingConfig?.provinceDistanceMap
         ? Object.keys(shippingConfig.provinceDistanceMap).sort((a, b) => a.localeCompare(b, 'vi'))
         : [];
 
-    // ── ShippingBadge dùng API backend ──────────────────────────────────────
     const ShippingBadge = () => {
         if (shippingConfigLoading || shippingFeeLoading) return <Spin size="small" />;
-        if (!selectedProvince) return (
-            <span style={{ color: '#aaa', fontSize: 13 }}>Chọn tỉnh/thành để xem phí ship</span>
-        );
+        if (!selectedProvince) return <span style={{ color: '#aaa', fontSize: 13 }}>Chọn tỉnh/thành để xem phí ship</span>;
         if (shippingInfo.isFree) return (
-            <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 13 }}>
-                MIỄN PHÍ SHIP 🎉
-            </Tag>
+            <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 13 }}>MIỄN PHÍ SHIP 🎉</Tag>
         );
         return (
             <span style={{ color: RED, fontWeight: 700 }}>
                 {shippingFee.toLocaleString('vi-VN')}đ
-                <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 6 }}>
-                    ({shippingInfo.zoneLabel})
-                </span>
+                <span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 6 }}>({shippingInfo.zoneLabel})</span>
             </span>
         );
     };
 
+    // ─────────────────────────────────────────────────────────────────────────
     return (
         <div style={{ padding: '30px', background: '#f5f5f5', minHeight: '100vh' }}>
             <div style={{ maxWidth: 1200, margin: '0 auto' }}>
                 <Title level={2} style={{ textAlign: 'center', marginBottom: 30 }}>Thanh Toán</Title>
 
                 <Row gutter={24}>
-                    {/* ── CỘT TRÁI ── */}
+                    {/* ── CỘT TRÁI ─────────────────────────────────────────── */}
                     <Col xs={24} lg={14}>
 
-                        {/* Địa chỉ */}
+                        {/* ── Địa chỉ ─────────────────────────────────────── */}
                         <Card
                             title={<span><EnvironmentOutlined /> Địa chỉ nhận hàng</span>}
                             style={{ marginBottom: 20 }}
                             extra={
-                                // Nút "Thêm địa chỉ" chỉ hiện khi đã có địa chỉ, chưa mở form, và chưa đủ 5
                                 savedAddresses.length > 0 && !isAddingNew && savedAddresses.length < 5 && (
                                     <Button type="link" icon={<PlusOutlined />} onClick={() => setIsAddingNew(true)}>
                                         Thêm địa chỉ mới
@@ -533,191 +455,143 @@ const Checkout = () => {
                                 )
                             }
                         >
-                            {/* ── CASE 1: Chưa có địa chỉ nào → hiện form luôn ── */}
-                            {savedAddresses.length === 0 && (
-                                <div style={{ background: '#fafafa', padding: 20, borderRadius: 8, border: '1px dashed #d9d9d9' }}>
-                                    <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
-                                        Bạn chưa có địa chỉ giao hàng. Vui lòng thêm địa chỉ mới.
-                                    </div>
-                                    <Form
-                                        form={addForm}
-                                        layout="vertical"
-                                        onFinish={handleAddNewAddress}
-                                        initialValues={{ name: userInfo?.fullName, phone: userInfo?.phone }}
-                                    >
-                                        <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
-                                                    <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
-                                                    <Input prefix={<PhoneOutlined />} placeholder="Số điện thoại" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={24}>
-                                                <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
-                                                    <Select
-                                                        showSearch
-                                                        placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
-                                                        loading={shippingConfigLoading}
-                                                        options={provinceList.map(p => ({ value: p, label: p }))}
-                                                        filterOption={(input, option) =>
-                                                            option.label.toLowerCase().includes(input.toLowerCase())
-                                                        }
-                                                    />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={24}>
-                                                <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
-                                                    <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-                                        <Button type="primary" htmlType="submit" block>
-                                            Lưu địa chỉ
-                                        </Button>
-                                    </Form>
-                                </div>
-                            )}
-
-                            {/* ── CASE 2: Đã có địa chỉ → danh sách chọn ── */}
-                            {savedAddresses.length > 0 && (
+                            {addrLoading ? (
+                                <div style={{ textAlign: 'center', padding: '30px 0' }}><Spin /></div>
+                            ) : (
                                 <>
-                                    <List
-                                        dataSource={savedAddresses}
-                                        renderItem={item => (
-                                            <div
-                                                onClick={() => setSelectedAddressId(item.id)}
-                                                style={{
-                                                    cursor: 'pointer',
-                                                    border: selectedAddressId === item.id ? `2px solid ${BLUE}` : '1px solid #e8e8e8',
-                                                    padding: 15, marginBottom: 10, borderRadius: 8,
-                                                    backgroundColor: selectedAddressId === item.id ? '#f0f9ff' : 'white',
-                                                    transition: 'all .3s',
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-                                                        <Radio checked={selectedAddressId === item.id} />
-                                                        <div style={{ marginLeft: 10 }}>
-                                                            <Space>
-                                                                <Text strong>{item.name}</Text>
-                                                                <Divider type="vertical" />
-                                                                <Text type="secondary">{item.phone}</Text>
-                                                                {item.id === localStorage.getItem('defaultAddressId') && (
-                                                                    <Tag color="blue">Mặc định</Tag>
-                                                                )}
-                                                            </Space>
-                                                            <div style={{ marginTop: 4, color: '#555' }}>{item.detail}</div>
-                                                            {item.city && (
-                                                                <div style={{ marginTop: 2, fontSize: 12, color: '#888' }}>
-                                                                    📍 {item.city}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <Space>
-                                                        <Tooltip title="Sửa địa chỉ">
-                                                            <Button type="text" icon={<EditOutlined style={{ color: BLUE }} />}
-                                                                onClick={e => openEditModal(e, item)} />
-                                                        </Tooltip>
-                                                        <Popconfirm
-                                                            title="Bạn có chắc muốn xóa địa chỉ này?"
-                                                            onConfirm={e => handleDeleteAddress(e, item.id)}
-                                                            onCancel={e => e.stopPropagation()}
-                                                            okText="Xóa" cancelText="Hủy"
-                                                        >
-                                                            <Button type="text" danger icon={<DeleteOutlined />}
-                                                                onClick={e => e.stopPropagation()} />
-                                                        </Popconfirm>
-                                                    </Space>
-                                                </div>
+                                    {/* CASE 1: Chưa có địa chỉ */}
+                                    {savedAddresses.length === 0 && (
+                                        <div style={{ background: '#fafafa', padding: 20, borderRadius: 8, border: '1px dashed #d9d9d9' }}>
+                                            <div style={{ marginBottom: 12, color: '#666', fontSize: 13 }}>
+                                                Bạn chưa có địa chỉ giao hàng. Vui lòng thêm địa chỉ mới.
                                             </div>
-                                        )}
-                                    />
-
-                                    {/* Form thêm địa chỉ mới — chỉ mở khi bấm nút "Thêm địa chỉ mới" */}
-                                    {isAddingNew && (
-                                        <div style={{
-                                            marginTop: 12, background: '#fafafa', padding: 20,
-                                            borderRadius: 8, border: '1px dashed #91caff',
-                                        }}>
-                                            <Title level={5} style={{ marginTop: 0, marginBottom: 16, color: BLUE }}>
-                                                <PlusOutlined style={{ marginRight: 6 }} />Thêm địa chỉ giao hàng mới
-                                            </Title>
-                                            <Form
-                                                form={addForm}
-                                                layout="vertical"
-                                                onFinish={handleAddNewAddress}
-                                            >
-                                                <Row gutter={16}>
-                                                    <Col span={12}>
-                                                        <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
-                                                            <Input prefix={<UserOutlined />} placeholder="Tên người nhận" />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col span={12}>
-                                                        <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
-                                                            <Input prefix={<PhoneOutlined />} placeholder="Số điện thoại" />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col span={24}>
-                                                        <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
-                                                            <Select
-                                                                showSearch
-                                                                placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
-                                                                loading={shippingConfigLoading}
-                                                                options={provinceList.map(p => ({ value: p, label: p }))}
-                                                                filterOption={(input, option) =>
-                                                                    option.label.toLowerCase().includes(input.toLowerCase())
-                                                                }
-                                                            />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col span={24}>
-                                                        <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
-                                                            <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
-                                                        </Form.Item>
-                                                    </Col>
-                                                </Row>
-                                                <Space>
-                                                    <Button type="primary" htmlType="submit">Lưu địa chỉ</Button>
-                                                    <Button onClick={() => { setIsAddingNew(false); addForm.resetFields(); }}>Hủy</Button>
-                                                </Space>
+                                            <Form form={addForm} layout="vertical" onFinish={handleAddNewAddress}
+                                                initialValues={{ name: userInfo?.fullName, phone: userInfo?.phone }}>
+                                                <AddressFormFields provinceList={provinceList} loading={shippingConfigLoading} />
+                                                <Button type="primary" htmlType="submit" block loading={addSaving}
+                                                    style={{ background: RED, borderColor: RED }}>
+                                                    Lưu địa chỉ
+                                                </Button>
                                             </Form>
                                         </div>
                                     )}
 
-                                    {/* Cảnh báo nếu địa chỉ được chọn không có tỉnh/thành */}
-                                    {!isAddingNew && selectedAddressId && !selectedProvince && (
-                                        <div style={{
-                                            marginTop: 12, padding: '12px 16px',
-                                            background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8,
-                                        }}>
-                                            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#856404' }}>
-                                                ⚠️ Địa chỉ này chưa có tỉnh/thành phố. Vui lòng chọn để tính phí ship:
-                                            </div>
-                                            <Select
-                                                showSearch
-                                                style={{ width: '100%' }}
-                                                placeholder={shippingConfigLoading ? 'Đang tải danh sách...' : 'Chọn tỉnh/thành phố...'}
-                                                loading={shippingConfigLoading}
-                                                value={selectedProvince || undefined}
-                                                onChange={val => setSelectedProvince(val)}
-                                                options={provinceList.map(p => ({ value: p, label: p }))}
-                                                filterOption={(input, option) =>
-                                                    option.label.toLowerCase().includes(input.toLowerCase())
-                                                }
+                                    {/* CASE 2: Đã có địa chỉ → danh sách */}
+                                    {savedAddresses.length > 0 && (
+                                        <>
+                                            <List
+                                                dataSource={savedAddresses}
+                                                renderItem={item => (
+                                                    <div
+                                                        onClick={() => setSelectedAddressId(item._id)}
+                                                        style={{
+                                                            cursor: 'pointer',
+                                                            border: selectedAddressId === item._id
+                                                                ? `2px solid ${BLUE}` : '1px solid #e8e8e8',
+                                                            padding: 15, marginBottom: 10, borderRadius: 8,
+                                                            backgroundColor: selectedAddressId === item._id ? '#f0f9ff' : 'white',
+                                                            transition: 'all .3s',
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                                                                <Radio checked={selectedAddressId === item._id} onChange={() => setSelectedAddressId(item._id)} />
+                                                                <div style={{ marginLeft: 10 }}>
+                                                                    <Space>
+                                                                        <Text strong>{item.name}</Text>
+                                                                        <Divider type="vertical" />
+                                                                        <Text type="secondary">{item.phone}</Text>
+                                                                        {item._id === defaultAddressId && (
+                                                                            <Tag color="blue">Mặc định</Tag>
+                                                                        )}
+                                                                    </Space>
+                                                                    <div style={{ marginTop: 4, color: '#555' }}>{item.detail}</div>
+                                                                    {item.city && (
+                                                                        <div style={{ marginTop: 2, fontSize: 12, color: '#888' }}>
+                                                                            📍 {item.city}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <Space onClick={e => e.stopPropagation()}>
+                                                                {item._id !== defaultAddressId && (
+                                                                    <Tooltip title="Đặt làm mặc định">
+                                                                        <Button type="text" size="small"
+                                                                            style={{ fontSize: 11, color: '#1890ff' }}
+                                                                            onClick={() => handleSetDefault(item._id)}>
+                                                                            Mặc định
+                                                                        </Button>
+                                                                    </Tooltip>
+                                                                )}
+                                                                <Tooltip title="Sửa địa chỉ">
+                                                                    <Button type="text" icon={<EditOutlined style={{ color: BLUE }} />}
+                                                                        onClick={e => openEditModal(e, item)} />
+                                                                </Tooltip>
+                                                                {item._id !== defaultAddressId && (
+                                                                    <Popconfirm
+                                                                        title="Bạn có chắc muốn xóa địa chỉ này?"
+                                                                        onConfirm={e => handleDeleteAddress(e, item._id)}
+                                                                        onCancel={e => e.stopPropagation()}
+                                                                        okText="Xóa" cancelText="Hủy"
+                                                                    >
+                                                                        <Button type="text" danger icon={<DeleteOutlined />}
+                                                                            onClick={e => e.stopPropagation()} />
+                                                                    </Popconfirm>
+                                                                )}
+                                                            </Space>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             />
-                                        </div>
+
+                                            {/* Form thêm mới */}
+                                            {isAddingNew && (
+                                                <div style={{
+                                                    marginTop: 12, background: '#fafafa', padding: 20,
+                                                    borderRadius: 8, border: '1px dashed #91caff',
+                                                }}>
+                                                    <Title level={5} style={{ marginTop: 0, marginBottom: 16, color: BLUE }}>
+                                                        <PlusOutlined style={{ marginRight: 6 }} />Thêm địa chỉ giao hàng mới
+                                                    </Title>
+                                                    <Form form={addForm} layout="vertical" onFinish={handleAddNewAddress}>
+                                                        <AddressFormFields provinceList={provinceList} loading={shippingConfigLoading} />
+                                                        <Space>
+                                                            <Button type="primary" htmlType="submit" loading={addSaving}
+                                                                style={{ background: RED, borderColor: RED }}>
+                                                                Lưu địa chỉ
+                                                            </Button>
+                                                            <Button onClick={() => { setIsAddingNew(false); addForm.resetFields(); }}>Hủy</Button>
+                                                        </Space>
+                                                    </Form>
+                                                </div>
+                                            )}
+
+                                            {/* Cảnh báo thiếu tỉnh/thành */}
+                                            {!isAddingNew && selectedAddressId && !selectedProvince && (
+                                                <div style={{
+                                                    marginTop: 12, padding: '12px 16px',
+                                                    background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8,
+                                                }}>
+                                                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#856404' }}>
+                                                        ⚠️ Địa chỉ này chưa có tỉnh/thành phố. Vui lòng chọn để tính phí ship:
+                                                    </div>
+                                                    <Select showSearch style={{ width: '100%' }}
+                                                        placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố...'}
+                                                        loading={shippingConfigLoading}
+                                                        value={selectedProvince || undefined}
+                                                        onChange={val => setSelectedProvince(val)}
+                                                        options={provinceList.map(p => ({ value: p, label: p }))}
+                                                        filterOption={(input, opt) => opt.label.toLowerCase().includes(input.toLowerCase())}
+                                                    />
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </>
                             )}
                         </Card>
 
-                        {/* Phương thức thanh toán */}
+                        {/* ── Phương thức thanh toán (COD + PayPal) ────────── */}
                         <Card title={<span><CreditCardOutlined /> Phương thức thanh toán</span>} style={{ marginBottom: 20 }}>
                             <Radio.Group onChange={e => setPaymentMethod(e.target.value)} value={paymentMethod} style={{ width: '100%' }}>
                                 <Space direction="vertical" style={{ width: '100%' }}>
@@ -731,7 +605,7 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
-                                    <Radio value="paypal" style={{ width: '100%', padding: 15, border: '1px solid #d9d9d9', borderRadius: 4 }}>
+                                    <Radio value="paypal" style={{ width: '100%', padding: 15, border: paymentMethod === 'paypal' ? '2px solid #003087' : '1px solid #d9d9d9', borderRadius: 4, background: paymentMethod === 'paypal' ? '#f0f5ff' : 'white', transition: 'all 0.3s' }}>
                                         <Space>
                                             <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" alt="paypal" width={60} />
                                             <div>
@@ -741,21 +615,11 @@ const Checkout = () => {
                                             </div>
                                         </Space>
                                     </Radio>
-                                    <Radio value="vnpay" style={{ width: '100%', padding: 15, border: paymentMethod === 'vnpay' ? '2px solid #e30019' : '1px solid #d9d9d9', borderRadius: 4, background: paymentMethod === 'vnpay' ? '#fff5f5' : 'white', transition: 'all 0.3s' }}>
-                                        <Space>
-                                            <img src="https://cdn.haitrieu.com/wp-content/uploads/2022/10/Icon-VNPAY-QR.png" alt="vnpay" width={40} style={{ objectFit: 'contain' }} />
-                                            <div>
-                                                <Text strong>Thanh toán qua VNPay</Text>
-                                                <div style={{ fontSize: 12, color: '#888' }}>ATM, Visa, MasterCard, QR Code, Ví điện tử</div>
-                                                <Tag color="red" style={{ marginTop: 4, fontSize: 11 }}>Thanh toán online an toàn</Tag>
-                                            </div>
-                                        </Space>
-                                    </Radio>
                                 </Space>
                             </Radio.Group>
                         </Card>
 
-                        {/* Voucher */}
+                        {/* ── Voucher ───────────────────────────────────────── */}
                         <Card title={<span><GiftOutlined style={{ color: RED }} /> Mã giảm giá</span>} style={{ marginBottom: 20 }}>
                             {!appliedVoucher ? (
                                 <div style={{ display: 'flex', gap: 10 }}>
@@ -802,7 +666,7 @@ const Checkout = () => {
                         </Card>
                     </Col>
 
-                    {/* ── CỘT PHẢI ── */}
+                    {/* ── CỘT PHẢI ─────────────────────────────────────────── */}
                     <Col xs={24} lg={10}>
                         <Card title="Đơn hàng của bạn" style={{ position: 'sticky', top: 20 }}>
                             <List
@@ -846,7 +710,6 @@ const Checkout = () => {
                                     <ShippingBadge />
                                 </div>
 
-                                {/* Gợi ý mua thêm để miễn ship */}
                                 {selectedProvince && shippingConfig && !shippingInfo.isFree && subtotal > 0 && (
                                     <div style={{
                                         background: '#fff7e6', border: '1px solid #ffd591',
@@ -866,23 +729,11 @@ const Checkout = () => {
                                     </Title>
                                 </div>
 
-                                {/* Tag trạng thái thanh toán */}
                                 <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                                    {paymentMethod === 'paypal' && (
-                                        <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 12 }}>
-                                            Đã thanh toán (PayPal)
-                                        </Tag>
-                                    )}
-                                    {paymentMethod === 'vnpay' && (
-                                        <Tag color="red" icon={<CheckCircleOutlined />} style={{ fontSize: 12 }}>
-                                            Thanh toán online (VNPay)
-                                        </Tag>
-                                    )}
-                                    {paymentMethod === 'cod' && (
-                                        <Tag color="warning" icon={<CloseCircleOutlined />} style={{ fontSize: 12 }}>
-                                            Chưa thanh toán (COD)
-                                        </Tag>
-                                    )}
+                                    {paymentMethod === 'paypal'
+                                        ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 12 }}>Đã thanh toán (PayPal)</Tag>
+                                        : <Tag color="warning" icon={<CloseCircleOutlined />} style={{ fontSize: 12 }}>Chưa thanh toán (COD)</Tag>
+                                    }
                                 </div>
 
                                 {(discountAmount > 0 || shippingInfo.isFree) && (
@@ -894,20 +745,15 @@ const Checkout = () => {
 
                             <Button
                                 type="primary" block size="large"
-                                loading={isProcessing || vnpayLoading}
+                                loading={isProcessing}
                                 onClick={handlePlaceOrder}
-                                disabled={isAddingNew || savedAddresses.length === 0 || !selectedProvince || shippingConfigLoading}
-                                style={{
-                                    height: 50,
-                                    fontWeight: 700, fontSize: 15, marginTop: 8,
-                                    ...getButtonStyle(),
-                                }}
+                                disabled={isAddingNew || savedAddresses.length === 0 || !selectedProvince || shippingConfigLoading || addrLoading}
+                                style={{ height: 50, fontWeight: 700, fontSize: 15, marginTop: 8, ...getButtonStyle() }}
                             >
                                 {getButtonText()}
                             </Button>
 
-                            {/* Bảng phí giao hàng từ config admin */}
-                            {shippingConfig && shippingConfig.kmTiers && shippingConfig.kmTiers.length > 0 && (
+                            {shippingConfig?.kmTiers?.length > 0 && (
                                 <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 8 }}>
                                         <CarOutlined /> Bảng phí giao hàng theo khoảng cách:
@@ -919,8 +765,7 @@ const Checkout = () => {
                                                 <span>📍 {tier.label}</span>
                                                 <span style={{ fontWeight: 600, color: '#555' }}>{tier.pricePerKm.toLocaleString('vi-VN')}đ/km</span>
                                             </div>
-                                        ))
-                                    }
+                                        ))}
                                     <div style={{ fontSize: 11, color: GREEN, marginTop: 6, borderTop: '1px dashed #eee', paddingTop: 6 }}>
                                         ✅ Miễn phí ship cho đơn hàng từ {shippingConfig.freeShipThreshold.toLocaleString('vi-VN')}đ
                                     </div>
@@ -931,39 +776,22 @@ const Checkout = () => {
                 </Row>
             </div>
 
-            {/* ── MODAL SỬA ĐỊA CHỈ ── */}
+            {/* ── Modal sửa địa chỉ ────────────────────────────────────────── */}
             <Modal
                 title="Cập nhật địa chỉ"
                 open={isEditing}
                 onOk={handleUpdateAddress}
                 onCancel={() => { setIsEditing(false); setEditingAddress(null); }}
                 okText="Lưu thay đổi" cancelText="Hủy"
+                confirmLoading={editSaving}
+                okButtonProps={{ style: { background: RED, borderColor: RED } }}
             >
                 <Form form={editForm} layout="vertical">
-                    <Form.Item name="name" label="Người nhận" rules={[{ required: true, message: 'Nhập tên' }]}>
-                        <Input prefix={<UserOutlined />} />
-                    </Form.Item>
-                    <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT' }]}>
-                        <Input prefix={<PhoneOutlined />} />
-                    </Form.Item>
-                    <Form.Item name="province" label="Tỉnh / Thành phố" rules={[{ required: true, message: 'Chọn tỉnh/thành' }]}>
-                        <Select
-                            showSearch
-                            placeholder={shippingConfigLoading ? 'Đang tải...' : 'Chọn tỉnh/thành phố'}
-                            loading={shippingConfigLoading}
-                            options={provinceList.map(p => ({ value: p, label: p }))}
-                            filterOption={(input, option) =>
-                                option.label.toLowerCase().includes(input.toLowerCase())
-                            }
-                        />
-                    </Form.Item>
-                    <Form.Item name="detail" label="Địa chỉ chi tiết" rules={[{ required: true, message: 'Nhập địa chỉ' }]}>
-                        <Input.TextArea rows={2} />
-                    </Form.Item>
+                    <AddressFormFields provinceList={provinceList} loading={shippingConfigLoading} />
                 </Form>
             </Modal>
 
-            {/* ── MODAL PAYPAL ── */}
+            {/* ── Modal PayPal ──────────────────────────────────────────────── */}
             <Modal
                 title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -990,7 +818,6 @@ const Checkout = () => {
                                 {finalTotal.toLocaleString('vi-VN')}đ
                             </span>
                         </div>
-
                         <Form form={paypalForm} layout="vertical">
                             <Form.Item name="email" label="Email PayPal"
                                 rules={[{ required: true, message: 'Nhập email PayPal!' }, { type: 'email', message: 'Email không hợp lệ!' }]}>
@@ -1004,7 +831,6 @@ const Checkout = () => {
                                     prefix={<CreditCardOutlined style={{ color: '#003087' }} />}
                                     onChange={e => paypalForm.setFieldValue('cardNumber', e.target.value.replace(/\D/g, ''))} />
                             </Form.Item>
-
                             <Row gutter={12}>
                                 <Col span={12}>
                                     <Form.Item name="expiry" label="Ngày hết hạn"
@@ -1026,20 +852,17 @@ const Checkout = () => {
                                     </Form.Item>
                                 </Col>
                             </Row>
-
                             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                                 {['Visa', 'MC', 'Amex'].map(card => (
                                     <div key={card} style={{ border: '1px solid #e8e8e8', borderRadius: 4, padding: '3px 10px', fontSize: 11, color: '#888', background: '#fafafa' }}>{card}</div>
                                 ))}
                             </div>
-
                             <Button type="primary" block size="large" onClick={handlePaypalConfirm}
                                 style={{ background: '#003087', borderColor: '#003087', fontWeight: 700, height: 48 }}>
                                 Thanh toán {finalTotal.toLocaleString('vi-VN')}đ
                             </Button>
                             <Button block size="large" style={{ marginTop: 8 }} onClick={() => setPaypalModalOpen(false)}>Hủy</Button>
                         </Form>
-
                         <div style={{ textAlign: 'center', marginTop: 12, fontSize: 11, color: '#aaa' }}>
                             🔒 Thông tin được mã hóa SSL 256-bit
                         </div>

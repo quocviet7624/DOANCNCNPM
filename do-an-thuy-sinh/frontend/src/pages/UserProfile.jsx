@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Avatar, message, Upload, Modal, Tag, Tooltip } from 'antd';
+import { Form, Input, Button, Avatar, message, Upload, Modal, Tag } from 'antd';
 import {
     UserOutlined, UploadOutlined, SaveOutlined,
     PlusOutlined, EditOutlined, DeleteOutlined,
@@ -11,7 +11,7 @@ import axios from 'axios';
 const RED = '#c8232c';
 const API = 'http://localhost:5000/api';
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const getUserFromStorage = () => {
     try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
 };
@@ -20,6 +20,8 @@ const saveUserToStorage = (data) => {
     window.dispatchEvent(new Event('userChanged'));
 };
 const getToken = () => localStorage.getItem('token');
+
+const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
 
 // ─── AddressCard ──────────────────────────────────────────────────────────────
 const AddressCard = ({ addr, isDefault, onSetDefault, onEdit, onDelete }) => (
@@ -48,7 +50,7 @@ const AddressCard = ({ addr, isDefault, onSetDefault, onEdit, onDelete }) => (
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
             {!isDefault && (
-                <button onClick={() => onSetDefault(addr.id)}
+                <button onClick={() => onSetDefault(addr._id)}
                     style={{ background: 'none', border: `1px solid ${RED}`, color: RED, borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = RED; e.currentTarget.style.color = '#fff'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = RED; }}>
@@ -62,22 +64,21 @@ const AddressCard = ({ addr, isDefault, onSetDefault, onEdit, onDelete }) => (
                 <EditOutlined /> Sửa
             </button>
             {!isDefault && (
-                <Tooltip title="Không thể xóa địa chỉ mặc định" trigger={isDefault ? 'hover' : []}>
-                    <button onClick={() => onDelete(addr.id)}
-                        style={{ background: 'none', border: '1px solid #ffa39e', color: '#ff4d4f', borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#fff1f0'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}>
-                        <DeleteOutlined /> Xóa
-                    </button>
-                </Tooltip>
+                <button onClick={() => onDelete(addr._id)}
+                    style={{ background: 'none', border: '1px solid #ffa39e', color: '#ff4d4f', borderRadius: 4, padding: '3px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#fff1f0'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}>
+                    <DeleteOutlined /> Xóa
+                </button>
             )}
         </div>
     </div>
 );
 
 // ─── AddressModal ─────────────────────────────────────────────────────────────
-const AddressModal = ({ open, onClose, onSave, editingAddr }) => {
+const AddressModal = ({ open, onClose, onSave, editingAddr, saving }) => {
     const [form] = Form.useForm();
+
     useEffect(() => {
         if (open) {
             form.resetFields();
@@ -86,29 +87,50 @@ const AddressModal = ({ open, onClose, onSave, editingAddr }) => {
     }, [open, editingAddr, form]);
 
     const handleOk = () => {
-        form.validateFields().then(values => { onSave(values); form.resetFields(); });
+        form.validateFields().then(values => onSave(values));
     };
 
     return (
         <Modal
-            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8, color: RED }}><HomeOutlined />{editingAddr ? 'Sửa địa chỉ' : 'Thêm địa chỉ mới'}</div>}
+            title={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: RED }}>
+                    <HomeOutlined />{editingAddr ? 'Sửa địa chỉ' : 'Thêm địa chỉ mới'}
+                </div>
+            }
             open={open} onCancel={onClose} onOk={handleOk}
             okText={editingAddr ? 'Lưu thay đổi' : 'Thêm địa chỉ'} cancelText="Hủy"
-            okButtonProps={{ style: { background: RED, borderColor: RED } }} width={480}
+            okButtonProps={{ style: { background: RED, borderColor: RED }, loading: saving }}
+            confirmLoading={saving}
+            width={480}
         >
             <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                    <Form.Item label="Họ tên người nhận" name="name" rules={[{ required: true, message: 'Vui lòng nhập tên!' }]}>
+                    <Form.Item
+                        label="Họ tên người nhận" name="name"
+                        rules={[{ required: true, message: 'Vui lòng nhập tên!' }]}
+                    >
                         <Input prefix={<UserOutlined style={{ color: '#ccc' }} />} placeholder="Nguyễn Văn A" />
                     </Form.Item>
-                    <Form.Item label="Số điện thoại" name="phone" rules={[{ required: true, message: 'Vui lòng nhập SĐT!' }, { pattern: /^[0-9]{9,11}$/, message: 'SĐT không hợp lệ!' }]}>
+                    <Form.Item
+                        label="Số điện thoại" name="phone"
+                        rules={[
+                            { required: true, message: 'Vui lòng nhập SĐT!' },
+                            { pattern: /^[0-9]{9,11}$/, message: 'SĐT không hợp lệ!' },
+                        ]}
+                    >
                         <Input placeholder="0852192629" />
                     </Form.Item>
                 </div>
-                <Form.Item label="Tỉnh / Thành phố" name="city" rules={[{ required: true, message: 'Vui lòng nhập tỉnh/thành!' }]}>
+                <Form.Item
+                    label="Tỉnh / Thành phố" name="city"
+                    rules={[{ required: true, message: 'Vui lòng nhập tỉnh/thành!' }]}
+                >
                     <Input placeholder="Đà Nẵng" />
                 </Form.Item>
-                <Form.Item label="Địa chỉ chi tiết" name="detail" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ!' }]}>
+                <Form.Item
+                    label="Địa chỉ chi tiết" name="detail"
+                    rules={[{ required: true, message: 'Vui lòng nhập địa chỉ!' }]}
+                >
                     <Input.TextArea rows={2} placeholder="Số nhà, tên đường, phường/xã..." />
                 </Form.Item>
             </Form>
@@ -121,9 +143,7 @@ const ChangePasswordModal = ({ open, onClose }) => {
     const [form]    = Form.useForm();
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        if (open) form.resetFields();
-    }, [open, form]);
+    useEffect(() => { if (open) form.resetFields(); }, [open, form]);
 
     const handleOk = async () => {
         try {
@@ -133,19 +153,15 @@ const ChangePasswordModal = ({ open, onClose }) => {
             await axios.put(
                 `${API}/auth/change-password`,
                 { oldPassword: values.oldPassword, newPassword: values.newPassword },
-                { headers: { Authorization: `Bearer ${getToken()}` } }
+                { headers: authHeaders() }
             );
 
             message.success('Đổi mật khẩu thành công!');
             form.resetFields();
             onClose();
         } catch (err) {
-            // Lỗi từ server (mật khẩu cũ sai, v.v.)
             const msg = err.response?.data?.message;
-            if (msg) {
-                message.error(msg);
-            }
-            // Nếu là lỗi validate form thì bỏ qua (antd tự hiển thị)
+            if (msg) message.error(msg);
         } finally {
             setLoading(false);
         }
@@ -161,158 +177,168 @@ const ChangePasswordModal = ({ open, onClose }) => {
         >
             <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
                 <Form.Item
-                    label="Mật khẩu hiện tại"
-                    name="oldPassword"
+                    label="Mật khẩu hiện tại" name="oldPassword"
                     rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại!' }]}
                 >
-                    <Input.Password
-                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
-                        placeholder="Nhập mật khẩu hiện tại"
-                    />
+                    <Input.Password prefix={<LockOutlined style={{ color: '#ccc' }} />} placeholder="Nhập mật khẩu hiện tại" />
                 </Form.Item>
-
                 <Form.Item
-                    label="Mật khẩu mới"
-                    name="newPassword"
+                    label="Mật khẩu mới" name="newPassword"
                     rules={[
                         { required: true, message: 'Vui lòng nhập mật khẩu mới!' },
                         { min: 6, message: 'Mật khẩu ít nhất 6 ký tự!' },
                     ]}
                 >
-                    <Input.Password
-                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
-                        placeholder="Ít nhất 6 ký tự"
-                    />
+                    <Input.Password prefix={<LockOutlined style={{ color: '#ccc' }} />} placeholder="Ít nhất 6 ký tự" />
                 </Form.Item>
-
                 <Form.Item
-                    label="Xác nhận mật khẩu mới"
-                    name="confirmPassword"
+                    label="Xác nhận mật khẩu mới" name="confirmPassword"
                     dependencies={['newPassword']}
                     rules={[
                         { required: true, message: 'Vui lòng xác nhận mật khẩu!' },
                         ({ getFieldValue }) => ({
                             validator(_, value) {
-                                if (!value || getFieldValue('newPassword') === value) {
-                                    return Promise.resolve();
-                                }
+                                if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
                                 return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
                             },
                         }),
                     ]}
                 >
-                    <Input.Password
-                        prefix={<LockOutlined style={{ color: '#ccc' }} />}
-                        placeholder="Nhập lại mật khẩu mới"
-                    />
+                    <Input.Password prefix={<LockOutlined style={{ color: '#ccc' }} />} placeholder="Nhập lại mật khẩu mới" />
                 </Form.Item>
             </Form>
         </Modal>
     );
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 const UserProfile = () => {
     const [profileForm] = Form.useForm();
-    const [loading,           setLoading]           = useState(false);
-    const [user,              setUser]               = useState(null);
-    const [addresses,         setAddresses]          = useState([]);
-    const [defaultAddressId,  setDefaultAddressId]   = useState(null);
-    const [modalOpen,         setModalOpen]          = useState(false);
-    const [editingAddr,       setEditingAddr]        = useState(null);
-    const [pwModalOpen,       setPwModalOpen]        = useState(false);
-    const [activeTab,         setActiveTab]          = useState('profile');
 
+    const [profileLoading, setProfileLoading] = useState(false);
+    const [addrLoading,    setAddrLoading]    = useState(false);
+    const [addrSaving,     setAddrSaving]     = useState(false);
+
+    const [user,             setUser]            = useState(null);
+    const [addresses,        setAddresses]       = useState([]);
+    const [defaultAddressId, setDefaultAddressId] = useState(null);
+
+    const [modalOpen,    setModalOpen]    = useState(false);
+    const [editingAddr,  setEditingAddr]  = useState(null);
+    const [pwModalOpen,  setPwModalOpen]  = useState(false);
+    const [activeTab,    setActiveTab]    = useState('profile');
+
+    // ── Load user từ localStorage + load addresses từ server ─────────────────
     useEffect(() => {
         const userData = getUserFromStorage();
         setUser(userData);
         profileForm.setFieldsValue(userData);
-
-        const saved = JSON.parse(localStorage.getItem('addresses') || '[]');
-        setAddresses(saved);
-        const defId = localStorage.getItem('defaultAddressId');
-        setDefaultAddressId(defId || saved[0]?.id || null);
+        fetchAddresses();
     }, [profileForm]);
 
-    // ── Cập nhật thông tin cá nhân ────────────────────────────────────────────
-    const handleUpdateProfile = async (values) => {
-        setLoading(true);
+    const fetchAddresses = async () => {
+        setAddrLoading(true);
         try {
-            await axios.put(
-                `${API}/auth/profile`,
-                values,
-                { headers: { Authorization: `Bearer ${getToken()}` } }
-            );
+            const { data } = await axios.get(`${API}/auth/addresses`, { headers: authHeaders() });
+            setAddresses(data.addresses || []);
+            setDefaultAddressId(data.defaultAddressId || null);
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Không thể tải danh sách địa chỉ!');
+        } finally {
+            setAddrLoading(false);
+        }
+    };
+
+    // ── Cập nhật profile ──────────────────────────────────────────────────────
+    const handleUpdateProfile = async (values) => {
+        setProfileLoading(true);
+        try {
+            await axios.put(`${API}/auth/profile`, values, { headers: authHeaders() });
             const updated = { ...user, ...values };
             saveUserToStorage(updated);
             setUser(updated);
             message.success('Cập nhật thông tin thành công!');
         } catch (err) {
-            // Fallback: nếu API lỗi thì vẫn lưu local
-            const updated = { ...user, ...values };
-            saveUserToStorage(updated);
-            setUser(updated);
-            message.success('Cập nhật thông tin thành công!');
+            message.error(err.response?.data?.message || 'Cập nhật thất bại!');
         } finally {
-            setLoading(false);
+            setProfileLoading(false);
         }
     };
 
-    // ── Addresses ─────────────────────────────────────────────────────────────
-    const saveAddresses = (list, defId) => {
-        localStorage.setItem('addresses', JSON.stringify(list));
-        if (defId !== undefined) {
-            localStorage.setItem('defaultAddressId', defId);
-            setDefaultAddressId(defId);
-        }
-        setAddresses(list);
-    };
-
-    const handleSaveAddress = (values) => {
-        let newList;
-        if (editingAddr) {
-            newList = addresses.map(a => a.id === editingAddr.id ? { ...a, ...values } : a);
-            message.success('Đã cập nhật địa chỉ!');
-        } else {
-            const newAddr = { ...values, id: Date.now().toString() };
-            newList = [...addresses, newAddr];
-            if (newList.length === 1) {
-                saveAddresses(newList, newAddr.id);
-                setModalOpen(false); setEditingAddr(null);
-                return;
+    // ── Thêm / Sửa địa chỉ ───────────────────────────────────────────────────
+    const handleSaveAddress = async (values) => {
+        setAddrSaving(true);
+        try {
+            if (editingAddr) {
+                // Sửa
+                const { data } = await axios.put(
+                    `${API}/auth/addresses/${editingAddr._id}`,
+                    values,
+                    { headers: authHeaders() }
+                );
+                setAddresses(prev => prev.map(a => a._id === editingAddr._id ? data.address : a));
+                message.success('Đã cập nhật địa chỉ!');
+            } else {
+                // Thêm mới
+                const { data } = await axios.post(
+                    `${API}/auth/addresses`,
+                    values,
+                    { headers: authHeaders() }
+                );
+                setAddresses(prev => [...prev, data.address]);
+                if (data.defaultAddressId) setDefaultAddressId(data.defaultAddressId);
+                message.success('Đã thêm địa chỉ mới!');
             }
-            message.success('Đã thêm địa chỉ mới!');
+            setModalOpen(false);
+            setEditingAddr(null);
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Lưu địa chỉ thất bại!');
+        } finally {
+            setAddrSaving(false);
         }
-        saveAddresses(newList, undefined);
-        setModalOpen(false); setEditingAddr(null);
     };
 
-    const handleEdit = (addr) => {
-        setEditingAddr(addr);
-        setModalOpen(true);
+    // ── Đặt mặc định ─────────────────────────────────────────────────────────
+    const handleSetDefault = async (addrId) => {
+        try {
+            const { data } = await axios.put(
+                `${API}/auth/addresses/${addrId}/set-default`,
+                {},
+                { headers: authHeaders() }
+            );
+            setDefaultAddressId(data.defaultAddressId);
+            message.success('Đã đặt địa chỉ mặc định!');
+        } catch (err) {
+            message.error(err.response?.data?.message || 'Thao tác thất bại!');
+        }
     };
 
-    const handleSetDefault = (id) => {
-        localStorage.setItem('defaultAddressId', id);
-        setDefaultAddressId(id);
-        message.success('Đã đặt địa chỉ mặc định!');
-    };
-
-    const handleDelete = (id) => {
+    // ── Xóa địa chỉ ──────────────────────────────────────────────────────────
+    const handleDelete = (addrId) => {
         Modal.confirm({
             title: 'Xóa địa chỉ này?',
             content: 'Bạn không thể hoàn tác thao tác này.',
             okText: 'Xóa', cancelText: 'Hủy',
             okButtonProps: { danger: true },
-            onOk: () => {
-                const newList  = addresses.filter(a => a.id !== id);
-                const newDefId = id === defaultAddressId ? (newList[0]?.id || null) : defaultAddressId;
-                saveAddresses(newList, newDefId);
-                message.success('Đã xóa địa chỉ!');
+            onOk: async () => {
+                try {
+                    await axios.delete(`${API}/auth/addresses/${addrId}`, { headers: authHeaders() });
+                    setAddresses(prev => prev.filter(a => a._id !== addrId));
+                    message.success('Đã xóa địa chỉ!');
+                } catch (err) {
+                    message.error(err.response?.data?.message || 'Xóa địa chỉ thất bại!');
+                }
             },
         });
     };
 
+    // ── Mở modal sửa ─────────────────────────────────────────────────────────
+    const handleEdit = (addr) => {
+        setEditingAddr(addr);
+        setModalOpen(true);
+    };
+
+    // ── Styles ────────────────────────────────────────────────────────────────
     const TAB_STYLE = (active) => ({
         padding: '10px 24px', border: 'none',
         borderBottom: active ? `3px solid ${RED}` : '3px solid transparent',
@@ -324,7 +350,7 @@ const UserProfile = () => {
         <div style={{ padding: '30px 16px', background: '#f5f5f5', minHeight: '100vh' }}>
             <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
-                {/* Header card */}
+                {/* Header */}
                 <div style={{ background: '#fff', borderRadius: 8, padding: '20px 24px', marginBottom: 16, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', gap: 16 }}>
                     <Avatar size={64} icon={<UserOutlined />} src={user?.avatar} style={{ background: RED, flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
@@ -336,7 +362,6 @@ const UserProfile = () => {
                             <Upload showUploadList={false} beforeUpload={() => false}>
                                 <Button size="small" icon={<UploadOutlined />} style={{ fontSize: 12 }}>Đổi ảnh</Button>
                             </Upload>
-                            {/* ← Nút đổi mật khẩu trực tiếp từ đây */}
                             <Button
                                 size="small" icon={<LockOutlined />}
                                 style={{ fontSize: 12 }}
@@ -353,7 +378,7 @@ const UserProfile = () => {
                     <button style={TAB_STYLE(activeTab === 'profile')} onClick={() => setActiveTab('profile')}>
                         👤 Thông tin cá nhân
                     </button>
-                    <button style={TAB_STYLE(activeTab === 'addresses')} onClick={() => setActiveTab('addresses')}>
+                    <button style={TAB_STYLE(activeTab === 'addresses')} onClick={() => { setActiveTab('addresses'); }}>
                         📍 Địa chỉ giao hàng
                         {addresses.length > 0 && (
                             <span style={{ marginLeft: 6, background: RED, color: '#fff', borderRadius: 10, padding: '0px 6px', fontSize: 11, fontWeight: 700 }}>
@@ -366,11 +391,14 @@ const UserProfile = () => {
                 {/* Tab content */}
                 <div style={{ background: '#fff', borderRadius: '0 0 8px 8px', padding: 24, border: '1px solid #e8e8e8', borderTop: 'none' }}>
 
-                    {/* ── Profile ── */}
+                    {/* ── Tab Profile ── */}
                     {activeTab === 'profile' && (
                         <Form layout="vertical" form={profileForm} onFinish={handleUpdateProfile}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                                <Form.Item label="Họ và tên" name="fullName" rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}>
+                                <Form.Item
+                                    label="Họ và tên" name="fullName"
+                                    rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}
+                                >
                                     <Input size="large" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
                                 </Form.Item>
                                 <Form.Item label="Số điện thoại" name="phone">
@@ -384,38 +412,53 @@ const UserProfile = () => {
                                 <Input.TextArea rows={2} placeholder="Địa chỉ mặc định..." />
                             </Form.Item>
                             <Form.Item style={{ marginBottom: 0 }}>
-                                <Button type="primary" htmlType="submit" loading={loading} icon={<SaveOutlined />}
-                                    size="large" block style={{ background: RED, borderColor: RED, fontWeight: 700 }}>
+                                <Button
+                                    type="primary" htmlType="submit"
+                                    loading={profileLoading} icon={<SaveOutlined />}
+                                    size="large" block
+                                    style={{ background: RED, borderColor: RED, fontWeight: 700 }}
+                                >
                                     Lưu thay đổi
                                 </Button>
                             </Form.Item>
                         </Form>
                     )}
 
-                    {/* ── Addresses ── */}
+                    {/* ── Tab Địa chỉ ── */}
                     {activeTab === 'addresses' && (
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                 <div style={{ color: '#666', fontSize: 13 }}>
-                                    {addresses.length === 0 ? 'Chưa có địa chỉ nào. Thêm để thanh toán nhanh hơn!' : `${addresses.length} địa chỉ đã lưu`}
+                                    {addrLoading
+                                        ? 'Đang tải...'
+                                        : addresses.length === 0
+                                            ? 'Chưa có địa chỉ nào. Thêm để thanh toán nhanh hơn!'
+                                            : `${addresses.length} địa chỉ đã lưu`
+                                    }
                                 </div>
-                                <Button type="primary" icon={<PlusOutlined />}
+                                <Button
+                                    type="primary" icon={<PlusOutlined />}
                                     style={{ background: RED, borderColor: RED, fontWeight: 600 }}
                                     onClick={() => { setEditingAddr(null); setModalOpen(true); }}
-                                    disabled={addresses.length >= 5}>
+                                    disabled={addresses.length >= 5 || addrLoading}
+                                >
                                     Thêm địa chỉ
                                 </Button>
                             </div>
 
-                            {addresses.length === 0 ? (
+                            {addrLoading ? (
+                                <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>Đang tải địa chỉ...</div>
+                            ) : addresses.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>
                                     <EnvironmentOutlined style={{ fontSize: 48, marginBottom: 12, display: 'block' }} />
                                     <div style={{ fontSize: 14 }}>Bạn chưa có địa chỉ nào</div>
                                 </div>
                             ) : (
                                 addresses.map(addr => (
-                                    <AddressCard key={addr.id} addr={addr}
-                                        isDefault={addr.id === defaultAddressId}
+                                    <AddressCard
+                                        key={addr._id}
+                                        addr={addr}
+                                        isDefault={addr._id === defaultAddressId}
                                         onSetDefault={handleSetDefault}
                                         onEdit={handleEdit}
                                         onDelete={handleDelete}
@@ -439,9 +482,10 @@ const UserProfile = () => {
                 onClose={() => { setModalOpen(false); setEditingAddr(null); }}
                 onSave={handleSaveAddress}
                 editingAddr={editingAddr}
+                saving={addrSaving}
             />
 
-            {/* Modal đổi mật khẩu — gọi API thật */}
+            {/* Modal đổi mật khẩu */}
             <ChangePasswordModal
                 open={pwModalOpen}
                 onClose={() => setPwModalOpen(false)}
